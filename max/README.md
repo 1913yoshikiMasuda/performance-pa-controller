@@ -19,7 +19,8 @@ pps spatial S01 position 0.5 0.5 0.5
 pps spatial S01 gains 0.5 0.5 0.5 0.5
 pps spatial S01 trigger 1
 pps spatial S01 trigger 0
-pps pad P01 trigger 2
+pps pad P01 trigger 1
+pps pad P01 trigger 0
 pps fader F01 value 0.75
 ```
 

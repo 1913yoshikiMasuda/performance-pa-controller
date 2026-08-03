@@ -7,6 +7,7 @@ let fired = null;
 let toastTimer = null;
 let controlDrag = null;
 let faderTouch = null;
+const padTouches = new Map();
 let speakerDrag = null;
 const camera = { mode:"3d", az:0, el:0.95, zoom:1, preset:"iso" };
 const stagePointers = new Map();
@@ -75,7 +76,12 @@ function renderControls() {
     Object.assign(element.style, { left:`${control.x*100}%`, top:`${control.y*100}%`, width:`${control.w*100}%`, height:`${control.h*100}%` });
     if (control.type === "pad") {
       element.append(document.createTextNode(control.id));
-      element.addEventListener("pointerdown", (event) => { if (editMode) beginControlDrag(event, control, element); else { element.setPointerCapture(event.pointerId); send({ type:"control.trigger", id:control.id }); } });
+      element.addEventListener("pointerdown", (event) => {
+        if(editMode){beginControlDrag(event,control,element);return;}
+        if(![...padTouches.values()].some((touch)=>touch.id===control.id))send({type:"control.trigger",id:control.id,gate:1});
+        padTouches.set(event.pointerId,{id:control.id,element});element.classList.add("held");element.setPointerCapture(event.pointerId);event.preventDefault();
+      });
+      element.addEventListener("pointerup",endPadTouch);element.addEventListener("pointercancel",endPadTouch);
     } else {
       const label = document.createElement("b"); label.textContent = control.id;
       const input = document.createElement("input"); input.type = "range"; input.min = "0"; input.max = "1"; input.step = "0.001"; input.value = control.value;
@@ -88,6 +94,11 @@ function renderControls() {
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
     return element;
   }));
+}
+
+function endPadTouch(event){
+  const touch=padTouches.get(event.pointerId);if(!touch)return;padTouches.delete(event.pointerId);
+  if(![...padTouches.values()].some((item)=>item.id===touch.id)){touch.element.classList.remove("held");send({type:"control.trigger",id:touch.id,gate:0});}
 }
 
 function beginControlDrag(event, control, element) {

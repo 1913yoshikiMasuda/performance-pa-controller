@@ -73,8 +73,8 @@ export class OscOutput {
     ]));
   }
 
-  pad(id: string, seq: number): void {
-    this.send(encodeMessage(this.message(`pad/${id}/trigger`, [{ type: "i", value: seq }])));
+  pad(id: string, gate: 0 | 1): void {
+    this.send(encodeMessage(this.message(`pad/${id}/trigger`, [{ type: "i", value: gate }])));
   }
 
   fader(id: string, value: number): void {

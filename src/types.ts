@@ -65,7 +65,7 @@ export type ClientMessage =
   | { type: "control.add"; controlType: "pad" | "fader" }
   | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "x" | "y" | "w" | "h">> }
   | { type: "control.remove"; id: string }
-  | { type: "control.trigger"; id: string }
+  | { type: "control.trigger"; id: string; gate: 0 | 1 }
   | { type: "control.value"; id: string; value: number }
   | { type: "state.request" };
 

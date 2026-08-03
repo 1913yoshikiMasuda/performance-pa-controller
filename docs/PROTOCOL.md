@@ -44,10 +44,11 @@ Stageを押したままのドラッグ中、またはZフェーダーの操作�
 ## General Pad
 
 ```text
-/pps/pad/P01/trigger <eventSeq:int>
+/pps/pad/P01/trigger 1
+/pps/pad/P01/trigger 0
 ```
 
-Padは押下イベントだけを送り、releaseは送りません。発音内容と長さはMax側で決定します。
+Padもmomentary gateです。押した瞬間に`1`、指を離すかpointerがキャンセルされたときに`0`を送ります。ブラウザ接続が切れた場合もNodeが保持中のPadへ`0`を送ります。発音内容はMax側で決定します。
 
 ## General Fader
 

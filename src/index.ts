@@ -20,9 +20,12 @@ osc.open();
 let eventSeq = 0;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 const activeGates = new Map<string, Set<WebSocket>>();
+const activePadGates = new Map<string, Set<WebSocket>>();
 function releaseAllGates(): void {
   for (const id of activeGates.keys()) osc.spatialRelease(id);
+  for (const id of activePadGates.keys()) osc.pad(id, 0);
   activeGates.clear();
+  activePadGates.clear();
 }
 
 const mime: Record<string, string> = {
@@ -158,11 +161,17 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       Object.assign(control, message.patch);
       project = parseProject(project); changed(); break;
     }
-    case "control.remove": project.controls = project.controls.filter((item) => item.id !== message.id); changed(); break;
+    case "control.remove": {
+      if (activePadGates.has(message.id)) { osc.pad(message.id, 0); activePadGates.delete(message.id); }
+      project.controls = project.controls.filter((item) => item.id !== message.id); changed(); break;
+    }
     case "control.trigger": {
       const control = project.controls.find((item) => item.id === message.id);
       if (!control || control.type !== "pad") throw new Error("Unknown pad");
-      osc.pad(control.id, ++eventSeq); break;
+      const holders = activePadGates.get(control.id) ?? new Set<WebSocket>();
+      if (message.gate === 1) { holders.add(socket); activePadGates.set(control.id, holders); osc.pad(control.id, 1); }
+      else { holders.delete(socket); if (holders.size === 0) { activePadGates.delete(control.id); osc.pad(control.id, 0); } }
+      break;
     }
     case "control.value": {
       const control = project.controls.find((item) => item.id === message.id);
@@ -182,6 +191,10 @@ wss.on("connection", (socket) => {
     for (const [id, holders] of activeGates) {
       holders.delete(socket);
       if (holders.size === 0) { activeGates.delete(id); osc.spatialRelease(id); }
+    }
+    for (const [id, holders] of activePadGates) {
+      holders.delete(socket);
+      if (holders.size === 0) { activePadGates.delete(id); osc.pad(id, 0); }
     }
   });
 });
