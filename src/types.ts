@@ -70,9 +70,9 @@ export type ClientMessage =
   | { type: "state.request" };
 
 export type ServerMessage =
-  | { type: "state.full"; project: Project; oscReady: boolean }
-  | { type: "state.project"; project: Project }
-  | { type: "spatial.moved"; id: string; position: XYZ }
+  | { type: "state.full"; project: Project; oscReady: boolean; gainsBySource: Record<string, number[]> }
+  | { type: "state.project"; project: Project; gainsBySource: Record<string, number[]> }
+  | { type: "spatial.moved"; id: string; position: XYZ; gains: number[] }
   | { type: "spatial.fired"; id: string; position: XYZ; gains: number[]; seq: number }
   | { type: "project.data"; project: Project }
   | { type: "error"; operation: string; message: string };

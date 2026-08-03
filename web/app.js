@@ -3,6 +3,7 @@ const performanceSurface=document.querySelector("main");
 for(const eventName of ["contextmenu","selectstart","dragstart"])performanceSurface.addEventListener(eventName,(event)=>event.preventDefault());
 let theme=localStorage.getItem("pps-theme")==="hype"?"hype":"studio";
 let project = null;
+let gainsBySource = {};
 let socket = null;
 let selectedSource = null;
 let editMode = false;
@@ -35,16 +36,19 @@ function connect() {
     const message = JSON.parse(event.data);
     if (message.type === "state.full" || message.type === "state.project") {
       project = message.project;
+      gainsBySource = message.gainsBySource || {};
       if (message.type === "state.full") setStatus(message.oscReady);
       if (!project.spatialSources.some((source) => source.id === selectedSource)) selectedSource = project.spatialSources[0]?.id ?? null;
       render();
     } else if (message.type === "spatial.moved") {
       const source = project.spatialSources.find((item) => item.id === message.id);
       if (source) source.position = message.position;
+      gainsBySource[message.id] = message.gains || [];
       drawStage();
     } else if (message.type === "spatial.fired") {
       const source = project.spatialSources.find((item) => item.id === message.id);
       if (source) source.position = message.position;
+      gainsBySource[message.id] = message.gains || [];
       fired = { ...message, at:performance.now() }; drawStage();
     } else if (message.type === "project.data") downloadProject(message.project);
     else if (message.type === "error") toast(message.message);
@@ -55,6 +59,10 @@ function setStatus(ok) { $("status").classList.toggle("ok", ok); $("status").que
 function selected() { return project?.spatialSources.find((source) => source.id === selectedSource); }
 function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
 function cssColor(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim();}
+function sourceColor(id){
+  const palettes=theme==="hype"?["#54ffd1","#ff64d9","#8d7dff","#45c8ff","#ffe66d","#ff786e"]:["#65b7df","#9a8fd5","#58ae91","#d09262","#c87d98","#788fcf"];
+  let hash=0;for(const char of id)hash=(hash*31+char.charCodeAt(0))>>>0;return palettes[hash%palettes.length];
+}
 
 function render() {
   if (!project) return;
@@ -67,7 +75,8 @@ function render() {
 function renderSources() {
   $("sources").replaceChildren(...project.spatialSources.map((source) => {
     const wrap = document.createElement("div"); wrap.className = "source-wrap";
-    const button = document.createElement("button"); button.className = `source${source.id === selectedSource ? " selected" : ""}`; button.textContent = source.id;
+    const button = document.createElement("button"); button.className = `source${source.id === selectedSource ? " selected" : ""}`;button.style.setProperty("--source-color",sourceColor(source.id));
+    const dot=document.createElement("i");dot.className="source-dot";const meta=document.createElement("span");meta.innerHTML=`<small>SOURCE</small><b>${source.id}</b>`;button.append(dot,meta);
     button.addEventListener("click", () => { selectedSource = source.id; $("height").value = source.position[2]; updateHeight(); renderSources(); drawStage(); });
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"spatial.remove", id:source.id }); });
     wrap.append(button, remove); return wrap;
@@ -177,15 +186,19 @@ function drawRoom(ctx, view) {
   if(view.mode==="3d") for(let i=0;i<4;i++){line(ctx,projectPoint(roof[i],view),projectPoint(roof[(i+1)%4],view),soft);line(ctx,projectPoint(floor[i],view),projectPoint(roof[i],view),soft);}
 }
 function drawStage() {
-  if (!project) return; const canvas=$("stage"), view=projection(canvas), ctx=canvas.getContext("2d"),spatial=cssColor("--spatial"),spatialDim=cssColor("--spatial-dim"),speakerColor=cssColor("--speaker"); ctx.clearRect(0,0,view.width,view.height); drawRoom(ctx,view);
-  project.speakers.forEach((speaker) => { const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view); ctx.beginPath();ctx.arc(...p,5*view.dpr,0,Math.PI*2);ctx.fillStyle=speakerColor;ctx.fill();ctx.fillStyle=speakerColor;ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(speaker.id,p[0]+7*view.dpr,p[1]); });
-  project.spatialSources.forEach((source) => {
-    const p=projectPoint(source.position,view),floor=projectPoint([source.position[0],source.position[1],0],view),active=source.id===selectedSource;
-    if(view.mode==="3d")line(ctx,floor,p,active?spatial:spatialDim,1.5*view.dpr);
-    ctx.beginPath();ctx.arc(...p,(active?8:5)*view.dpr,0,Math.PI*2);ctx.fillStyle=active?spatial:spatialDim;ctx.fill();
-    if(view.mode==="2d"){ctx.fillStyle=active?spatial:spatialDim;ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(`${source.id} · Z ${(source.position[2]*project.room.height_m).toFixed(1)}m`,p[0]+9*view.dpr,p[1]-7*view.dpr);}
+  if (!project) return; const canvas=$("stage"),view=projection(canvas),ctx=canvas.getContext("2d"),speakerColor=cssColor("--speaker"),selectedSourceState=selected(),selectedColor=selectedSourceState?sourceColor(selectedSourceState.id):cssColor("--spatial"),selectedGains=gainsBySource[selectedSource]||[];ctx.clearRect(0,0,view.width,view.height);drawRoom(ctx,view);
+  const speakerPoints=project.speakers.map((speaker)=>projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view));
+  if(selectedSourceState){const sourcePoint=projectPoint(selectedSourceState.position,view);speakerPoints.forEach((speakerPoint,index)=>{const gain=selectedGains[index]||0;if(gain<=.001)return;ctx.save();ctx.globalAlpha=.1+gain*.55;line(ctx,sourcePoint,speakerPoint,selectedColor,(.5+gain*4.5)*view.dpr);ctx.restore();});}
+  project.speakers.forEach((speaker,index)=>{
+    const p=speakerPoints[index],size=6*view.dpr,gain=selectedGains[index]||0;ctx.save();ctx.translate(p[0],p[1]);ctx.rotate(Math.PI/4);ctx.strokeStyle=speakerColor;ctx.lineWidth=1.5*view.dpr;ctx.strokeRect(-size/2,-size/2,size,size);ctx.restore();
+    if(selectedSourceState){ctx.beginPath();ctx.arc(p[0],p[1],11*view.dpr,-Math.PI/2,-Math.PI/2+Math.PI*2*gain);ctx.strokeStyle=selectedColor;ctx.lineWidth=2.5*view.dpr;ctx.stroke();}
+    ctx.fillStyle=speakerColor;ctx.font=`600 ${8.5*view.dpr}px system-ui`;ctx.fillText(`SP · ${speaker.id}${selectedSourceState?`  ${Math.round(gain*100)}%`:""}`,p[0]+9*view.dpr,p[1]+3*view.dpr);
   });
-  if (fired && performance.now()-fired.at<550) { const p=projectPoint(fired.position,view),r=(performance.now()-fired.at)/550*45*view.dpr;ctx.save();ctx.globalAlpha=1-r/(45*view.dpr);ctx.beginPath();ctx.arc(...p,r,0,Math.PI*2);ctx.strokeStyle=spatial;ctx.lineWidth=2*view.dpr;ctx.stroke();ctx.restore();requestAnimationFrame(drawStage); }
+  project.spatialSources.forEach((source) => {
+    const p=projectPoint(source.position,view),floor=projectPoint([source.position[0],source.position[1],0],view),active=source.id===selectedSource,color=sourceColor(source.id);
+    ctx.save();ctx.globalAlpha=active?1:.52;if(view.mode==="3d")line(ctx,floor,p,color,1.3*view.dpr);ctx.beginPath();ctx.arc(...p,(active?7:5)*view.dpr,0,Math.PI*2);ctx.fillStyle=color;ctx.fill();if(active){ctx.beginPath();ctx.arc(...p,11*view.dpr,0,Math.PI*2);ctx.strokeStyle=color;ctx.lineWidth=1.2*view.dpr;ctx.stroke();}ctx.fillStyle=color;ctx.font=`650 ${9*view.dpr}px system-ui`;ctx.fillText(`SRC · ${source.id}${view.mode==="2d"?`  Z ${(source.position[2]*project.room.height_m).toFixed(1)}m`:""}`,p[0]+10*view.dpr,p[1]-8*view.dpr);ctx.restore();
+  });
+  if (fired && performance.now()-fired.at<550) { const p=projectPoint(fired.position,view),r=(performance.now()-fired.at)/550*45*view.dpr;ctx.save();ctx.globalAlpha=1-r/(45*view.dpr);ctx.beginPath();ctx.arc(...p,r,0,Math.PI*2);ctx.strokeStyle=sourceColor(fired.id);ctx.lineWidth=2*view.dpr;ctx.stroke();ctx.restore();requestAnimationFrame(drawStage); }
 }
 function pointerInCanvas(event,canvas){const rect=canvas.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}
 function pointerDistance(points){const values=[...points.values()];return values.length<2?1:Math.hypot(values[0].x-values[1].x,values[0].y-values[1].y);}
@@ -241,14 +254,14 @@ function renderSettings() {
   const values={"set-name":project.name,"set-host":project.osc.host,"set-port":project.osc.port,"set-namespace":project.osc.namespace,"room-width":project.room.width_m,"room-depth":project.room.depth_m,"room-height":project.room.height_m,"dbap-rolloff":project.dbap.rolloff_db,"dbap-blur":project.dbap.blur_m};
   Object.entries(values).forEach(([id,value])=>{ if(document.activeElement!==$(id)) $(id).value=value; });
   $("speakers").replaceChildren(...project.speakers.map((speaker)=>{
-    const row=document.createElement("div");row.className="speaker-row";const name=document.createElement("b");name.textContent=speaker.id;row.append(name);
+    const row=document.createElement("div");row.className="speaker-row";const name=document.createElement("b");name.textContent=`◇ ${speaker.id}`;row.append(name);
     [["X", "x_m"],["Y","y_m"],["Z","z_m"],["CH","out_ch"]].forEach(([label,key])=>{const wrap=document.createElement("label");wrap.textContent=label;const input=document.createElement("input");input.type="number";input.step=key==="out_ch"?"1":"0.1";input.value=speaker[key];input.addEventListener("change",()=>send({type:"speaker.update",id:speaker.id,patch:{[key]:Number(input.value)}}));wrap.append(input);row.append(wrap);});
     const remove=document.createElement("button");remove.textContent="×";remove.addEventListener("click",()=>send({type:"speaker.remove",id:speaker.id}));row.append(remove);return row;
   }));
 }
 function drawLayout() {
   if (!project || $("settings").hidden) return; const canvas=$("layout-stage"),view=projection(canvas),ctx=canvas.getContext("2d"),spatial=cssColor("--spatial"),text=cssColor("--text");ctx.clearRect(0,0,view.width,view.height);drawRoom(ctx,view);
-  project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view);ctx.beginPath();ctx.arc(...p,9*view.dpr,0,Math.PI*2);ctx.fillStyle=speakerDrag?.id===speaker.id?text:spatial;ctx.fill();ctx.fillStyle=text;ctx.font=`${10*view.dpr}px system-ui`;ctx.fillText(`${speaker.id} · ${speaker.z_m.toFixed(1)}m`,p[0]+12*view.dpr,p[1]);});
+  project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view),size=12*view.dpr;ctx.save();ctx.translate(p[0],p[1]);ctx.rotate(Math.PI/4);ctx.fillStyle=speakerDrag?.id===speaker.id?text:spatial;ctx.fillRect(-size/2,-size/2,size,size);ctx.restore();ctx.fillStyle=text;ctx.font=`${10*view.dpr}px system-ui`;ctx.fillText(`SP · ${speaker.id} · ${speaker.z_m.toFixed(1)}m`,p[0]+12*view.dpr,p[1]);});
 }
 const layoutCanvas=$("layout-stage");
 layoutCanvas.addEventListener("pointerdown",(event)=>{
@@ -295,7 +308,7 @@ const savedView=localStorage.getItem("pps-view");if(savedView==="2d"||savedView=
 
 function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value)}}}); }
 ["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur"].forEach((id)=>$(id).addEventListener("change",patchProject));
-function applyTheme(next){theme=next==="hype"?"hype":"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").textContent=`THEME · ${theme.toUpperCase()}`;requestAnimationFrame(redrawViews);}
+function applyTheme(next){theme=next==="hype"?"hype":"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").textContent=`THEME · ${theme.toUpperCase()}`;if(project)renderSources();requestAnimationFrame(redrawViews);}
 $("theme").addEventListener("click",()=>applyTheme(theme==="studio"?"hype":"studio"));
 applyTheme(theme);
 $("mode").addEventListener("click",()=>{editMode=!editMode;render();});

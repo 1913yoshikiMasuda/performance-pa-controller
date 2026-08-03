@@ -50,7 +50,8 @@ const server = createServer((request, response) => {
 const wss = new WebSocketServer({ server, maxPayload: 1_000_000 });
 const send = (socket: WebSocket, message: ServerMessage) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(message));
 const broadcast = (message: ServerMessage) => wss.clients.forEach((socket) => send(socket, message));
-const fullState = (): ServerMessage => ({ type: "state.full", project, oscReady: osc.isReady() });
+const gainsBySource = (): Record<string, number[]> => Object.fromEntries(project.spatialSources.map((source) => [source.id, dbapGains(source.position, project)]));
+const fullState = (): ServerMessage => ({ type: "state.full", project, oscReady: osc.isReady(), gainsBySource: gainsBySource() });
 
 function scheduleSave(): void {
   if (saveTimer) clearTimeout(saveTimer);
@@ -60,7 +61,7 @@ function scheduleSave(): void {
 
 function changed(): void {
   scheduleSave();
-  broadcast({ type: "state.project", project });
+  broadcast({ type: "state.project", project, gainsBySource: gainsBySource() });
 }
 
 function nextId(kind: keyof Project["nextIds"], prefix: string, existing: string[]): string {
@@ -122,9 +123,10 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       if (!source) throw new Error("Unknown spatial source");
       const position = message.position.map(clamp01) as XYZ;
       source.position = position;
-      osc.spatialMove(source.id, position, dbapGains(position, project));
+      const gains = dbapGains(position, project);
+      osc.spatialMove(source.id, position, gains);
       scheduleSave();
-      broadcast({ type: "spatial.moved", id: source.id, position });
+      broadcast({ type: "spatial.moved", id: source.id, position, gains });
       break;
     }
     case "spatial.trigger": {

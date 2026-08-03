@@ -15,6 +15,8 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 - EDITモードでPad/Faderを自由配置、LIVEモードで構造編集をロック
 - EDITモードでPad/Faderの幅と高さをリサイズ
 - 低彩度のStudio / シアン・マゼンタのHypeテーマ切替
+- Source IDごとの固定カラー（テーマ対応）
+- 選択Sourceから各Speakerへのgainを線・リング・%で可視化
 - Projectの自動保存、JSON Import / Export、最大5世代バックアップ
 - 安定した自動ID（`SP01`, `S01`, `P01`, `F01`）。削除しても再番号付けしません
 - Spatialイベントを1つのOSC Bundleとして送信
@@ -63,6 +65,8 @@ npm run check
 3. Stageの室内面に指を置き、そのまま必要な位置までドラッグします。
 
 発火後もSourceは選択されたままです。別の音を使う場合はSource IDを1回タップして切り替えます。
+
+Sourceは色付き円と`SRC · S01`、Speakerは菱形と`SP · SP01`で表示されます。選択Sourceの各SpeakerへのDBAP gainは、接続線の太さ・Speaker周囲のリング・数値%で確認できます。この表示値はWeb側の再計算ではなく、OSCへ送るNode側のgain計算結果です。
 
 Stage左上で2D / 3Dを切り替えられます。室内面に触れた瞬間に選択Sourceが移動して`trigger 1`を送り、指をつけたままドラッグするとposition/gainsが連続更新され、指を離すと`trigger 0`を送ります。2Dの室外タップは無視され、3Dの室外ドラッグは視点回転になります。Zフェーダーはgateを変えずに定位だけを更新します。ピンチまたはマウスホイールでズームし、ISO / FRONT / SIDE / TOPで視点を即座に切り替えられます。
 
