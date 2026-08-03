@@ -126,11 +126,24 @@ function beginControlResize(event,control,element){
   controlResize={pointer:event.pointerId,control,element,boardRect,startX:event.clientX,startY:event.clientY,startW:control.w,startH:control.h};event.currentTarget.setPointerCapture(event.pointerId);
 }
 function beginFaderTouch(event,control,element,input,output){
-  faderTouch={pointer:event.pointerId,control,element,input,output};element.setPointerCapture(event.pointerId);event.preventDefault();updateFaderTouch(event);
+  const rect=element.getBoundingClientRect();
+  faderTouch={pointer:event.pointerId,control,element,input,output,startY:event.clientY,startValue:control.value,travel:Math.max(60,rect.height-42),active:false,lastSent:control.value,pending:null,frame:0};
+  element.classList.add("touching");element.setPointerCapture(event.pointerId);event.preventDefault();
 }
 function updateFaderTouch(event){
-  if(!faderTouch||event.pointerId!==faderTouch.pointer)return;const rect=faderTouch.element.getBoundingClientRect(),top=rect.top+22,bottom=rect.bottom-20;
-  const value=clamp01(1-(event.clientY-top)/Math.max(1,bottom-top));faderTouch.control.value=value;faderTouch.input.value=value;faderTouch.element.style.setProperty("--value",value);faderTouch.output.textContent=`${Math.round(value*100)}%`;send({type:"control.value",id:faderTouch.control.id,value});
+  if(!faderTouch||event.pointerId!==faderTouch.pointer)return;const state=faderTouch,delta=state.startY-event.clientY,slop=6;
+  if(!state.active&&Math.abs(delta)<=slop)return;state.active=true;state.element.classList.add("adjusting");
+  const effective=Math.sign(delta)*Math.max(0,Math.abs(delta)-slop),value=clamp01(state.startValue+effective/state.travel);
+  state.control.value=value;state.input.value=value;state.element.style.setProperty("--value",value);state.output.textContent=`${Math.round(value*100)}%`;
+  if(Math.abs(value-state.lastSent)<.002)return;state.pending=value;
+  if(!state.frame)state.frame=requestAnimationFrame(()=>flushFaderValue(state,false));
+}
+function flushFaderValue(state,force){
+  if(state.frame){cancelAnimationFrame(state.frame);state.frame=0;}const value=state.pending;state.pending=null;
+  if(value==null||(!force&&Math.abs(value-state.lastSent)<.002))return;send({type:"control.value",id:state.control.id,value});state.lastSent=value;
+}
+function endFaderTouch(event,update=true){
+  if(!faderTouch||event.pointerId!==faderTouch.pointer)return;const state=faderTouch;if(update)updateFaderTouch(event);flushFaderValue(state,true);state.element.classList.remove("touching","adjusting");faderTouch=null;
 }
 $("control-board").addEventListener("pointermove", (event) => {
   if(faderTouch){updateFaderTouch(event);return;}
@@ -143,13 +156,13 @@ $("control-board").addEventListener("pointermove", (event) => {
   controlDrag.element.style.left = `${control.x*100}%`; controlDrag.element.style.top = `${control.y*100}%`;
 });
 $("control-board").addEventListener("pointerup", (event) => {
-  if(faderTouch?.pointer===event.pointerId){updateFaderTouch(event);faderTouch=null;return;}
+  if(faderTouch?.pointer===event.pointerId){endFaderTouch(event);return;}
   if(controlResize?.pointer===event.pointerId){send({type:"control.update",id:controlResize.control.id,patch:{w:controlResize.control.w,h:controlResize.control.h}});controlResize=null;return;}
   if (!controlDrag || event.pointerId !== controlDrag.pointer) return;
   const control = project.controls.find((item) => item.id === controlDrag.id);
   if (control) send({ type:"control.update", id:control.id, patch:{ x:control.x, y:control.y } }); controlDrag = null;
 });
-$("control-board").addEventListener("pointercancel", () => { controlDrag = null; controlResize = null; faderTouch = null; });
+$("control-board").addEventListener("pointercancel", (event) => { controlDrag = null; controlResize = null; if(faderTouch?.pointer===event.pointerId)endFaderTouch(event,false); });
 
 const HEIGHT_VIS = 0.7;
 function projection(canvas) {
