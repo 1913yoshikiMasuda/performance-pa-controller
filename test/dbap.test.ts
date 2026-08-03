@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dbapGains, normToMeters } from "../src/dbap.js";
+import { dbapGains, normToMeters, rangeTaper } from "../src/dbap.js";
 import { defaultProject } from "../src/types.js";
 
 describe("3D DBAP", () => {
@@ -28,6 +28,27 @@ describe("3D DBAP", () => {
     expect(gains[0]).toBe(1);
     expect(gains.slice(1)).toEqual([0, 0, 0]);
     expect(gains.reduce((sum, value) => sum + value * value, 0)).toBeCloseTo(1, 8);
+  });
+
+  it("eases gains through the outer quarter of the range", () => {
+    expect(rangeTaper(3.75, 5)).toBe(1);
+    expect(rangeTaper(4, 5)).toBeGreaterThan(rangeTaper(4.5, 5));
+    expect(rangeTaper(4.5, 5)).toBeGreaterThan(rangeTaper(4.9, 5));
+    expect(rangeTaper(5, 5)).toBe(0);
+  });
+
+  it("changes a ranged speaker continuously before reaching zero", () => {
+    const project = defaultProject();
+    project.speakers = [
+      { id: "FAR", x_m: 0, y_m: 0, z_m: 0, out_ch: 1 },
+      { id: "NEAR", x_m: 4.5, y_m: 0, z_m: 0, out_ch: 2 }
+    ];
+    project.dbap.maxDist_m = 5;
+    const gains = [4, 4.5, 4.9, 5].map((x) => dbapGains([x / 10, 0, 0], project)[0]);
+    expect(gains[0]).toBeGreaterThan(gains[1]);
+    expect(gains[1]).toBeGreaterThan(gains[2]);
+    expect(gains[2]).toBeGreaterThan(gains[3]);
+    expect(gains[3]).toBe(0);
   });
 
   it("falls back to the nearest speaker when the range contains none", () => {
