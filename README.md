@@ -7,6 +7,8 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 
 - 3Dスピーカーレイアウト（X/Y/Z、出力ch）
 - 3D DBAPによる定電力ゲイン計算
+- 2D / 3Dビュー切替、3Dオービット、ピンチ/ホイールズーム
+- ISO / FRONT / SIDE / TOPの3Dアングルプリセット
 - Spatial Sourceを選択し、Stageをタップして定位＋発火
 - 任意数の通常Padと、`0.0–1.0`に正規化されたFader
 - EDITモードでPad/Faderを自由配置、LIVEモードで構造編集をロック
@@ -58,6 +60,8 @@ npm run check
 3. 3D Stage上の場所をタップします。
 
 発火後もSourceは選択されたままです。別の音を使う場合はSource IDを1回タップして切り替えます。
+
+Stage左上で2D / 3Dを切り替えられます。3Dでは短いタップが発火、ドラッグが視点回転です。ピンチまたはマウスホイールでズームし、ISO / FRONT / SIDE / TOPで視点を即座に切り替えられます。Speaker Layoutも同じカメラ状態と操作を共有します。
 
 ### General Controls
 

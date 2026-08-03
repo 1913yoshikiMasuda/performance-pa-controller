@@ -25,6 +25,10 @@
         </aside>
         <div class="stage-wrap">
           <canvas id="stage"></canvas>
+          <div class="view-toolbar" data-view-toolbar>
+            <div class="view-mode"><button data-view="2d">2D</button><button data-view="3d" class="on">3D</button></div>
+            <div class="angles"><button data-angle="iso">ISO</button><button data-angle="front">FRONT</button><button data-angle="side">SIDE</button><button data-angle="top">TOP</button><button data-angle="reset" title="Reset view">↺</button></div>
+          </div>
           <div class="axis-hint">X / Y — tap stage · Z — height</div>
         </div>
         <aside class="height-control">
@@ -59,7 +63,13 @@
         <label>Height Z<input id="room-height" type="number" min="0.1" step="0.1"></label>
       </div>
       <div class="layout-area">
-        <canvas id="layout-stage"></canvas>
+        <div class="layout-canvas-wrap">
+          <canvas id="layout-stage"></canvas>
+          <div class="view-toolbar compact" data-view-toolbar>
+            <div class="view-mode"><button data-view="2d">2D</button><button data-view="3d" class="on">3D</button></div>
+            <div class="angles"><button data-angle="iso">ISO</button><button data-angle="front">FRONT</button><button data-angle="side">SIDE</button><button data-angle="top">TOP</button><button data-angle="reset">↺</button></div>
+          </div>
+        </div>
         <div class="speaker-panel">
           <div class="subhead">SPEAKERS <button id="speaker-add">＋ SPEAKER</button></div>
           <div id="speakers"></div>

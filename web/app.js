@@ -7,6 +7,13 @@ let fired = null;
 let toastTimer = null;
 let controlDrag = null;
 let speakerDrag = null;
+const camera = { mode:"3d", az:0, el:0.95, zoom:1, preset:"iso" };
+const stagePointers = new Map();
+const layoutPointers = new Map();
+let stageGesture = null;
+let stagePinch = null;
+let layoutOrbit = null;
+let layoutPinch = null;
 
 function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
 function toast(message) { $("toast").textContent = message; $("toast").classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("on"), 1800); }
@@ -40,7 +47,7 @@ function render() {
   document.body.classList.toggle("editing", editMode);
   $("mode").textContent = editMode ? "EDIT" : "LIVE"; $("mode").classList.toggle("edit", editMode);
   $("project-name").textContent = project.name;
-  renderSources(); renderControls(); renderSettings(); requestAnimationFrame(() => { drawStage(); drawLayout(); });
+  renderSources(); renderControls(); renderSettings(); requestAnimationFrame(() => { drawStage(); drawLayout(); syncViewControls(); });
 }
 
 function renderSources() {
@@ -93,30 +100,77 @@ $("control-board").addEventListener("pointerup", (event) => {
 });
 $("control-board").addEventListener("pointercancel", () => { controlDrag = null; });
 
+const HEIGHT_VIS = 0.7;
 function projection(canvas) {
   const rect = canvas.getBoundingClientRect(); const dpr = devicePixelRatio || 1;
   if (canvas.width !== Math.round(rect.width*dpr) || canvas.height !== Math.round(rect.height*dpr)) { canvas.width = Math.round(rect.width*dpr); canvas.height = Math.round(rect.height*dpr); }
-  const width = rect.width*dpr, height = rect.height*dpr;
-  return { dpr,width,height,cx:width*.5,top:height*.18,a:Math.min(width*.38,height*.62),b:Math.min(width*.18,height*.29),c:Math.min(height*.43,width*.25) };
+  const width = rect.width*dpr, height = rect.height*dpr, pad = Math.min(width,height)*0.1;
+  if (camera.mode === "2d") return { mode:"2d",dpr,width,height,x0:pad,y0:pad,rw:width-pad*2,rh:height-pad*2 };
+  const radius=Math.hypot(0.5,0.5,HEIGHT_VIS/2),scale=(Math.min(width,height)-pad*2)/(radius*2)*camera.zoom;
+  const centerY=-(HEIGHT_VIS/2)*Math.cos(camera.el);
+  return { mode:"3d",dpr,width,height,scale,ox:width/2,oy:height/2-centerY*scale };
 }
-function projectPoint(p, view) { return [view.cx+(p[0]-p[1])*view.a, view.top+(p[0]+p[1])*view.b-p[2]*view.c]; }
-function unprojectPoint(x, y, z, view) { const u=(x-view.cx)/view.a, v=(y-view.top+z*view.c)/view.b; return [clamp01((u+v)/2),clamp01((v-u)/2),z]; }
+function raw3d(p) {
+  const x=p[0]-0.5,y=p[1]-0.5,z=(p[2]||0)*HEIGHT_VIS;
+  const rx=x*Math.cos(camera.az)+y*Math.sin(camera.az),depth=x*Math.sin(camera.az)-y*Math.cos(camera.az);
+  return [rx,-depth*Math.sin(camera.el)-z*Math.cos(camera.el)];
+}
+function projectPoint(p, view) {
+  if(view.mode==="2d") return [view.x0+p[0]*view.rw,view.y0+p[1]*view.rh];
+  const [x,y]=raw3d(p);return [view.ox+x*view.scale,view.oy+y*view.scale];
+}
+function unprojectPoint(x, y, z, view) {
+  if(view.mode==="2d") return [clamp01((x-view.x0)/view.rw),clamp01((y-view.y0)/view.rh),z];
+  const rx=(x-view.ox)/view.scale,ry=(y-view.oy)/view.scale;
+  const depth=-(ry+z*HEIGHT_VIS*Math.cos(camera.el))/Math.sin(camera.el);
+  const px=rx*Math.cos(camera.az)+depth*Math.sin(camera.az),py=rx*Math.sin(camera.az)-depth*Math.cos(camera.az);
+  return [clamp01(px+0.5),clamp01(py+0.5),z];
+}
 function line(ctx,a,b,color,width=1) { ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke(); }
 function drawRoom(ctx, view) {
   const floor=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]], roof=floor.map(([x,y])=>[x,y,1]);
-  for(let i=0;i<4;i++){ line(ctx,projectPoint(floor[i],view),projectPoint(floor[(i+1)%4],view),"#314353"); line(ctx,projectPoint(roof[i],view),projectPoint(roof[(i+1)%4],view),"#233140"); line(ctx,projectPoint(floor[i],view),projectPoint(roof[i],view),"#233140"); }
+  for(let i=0;i<4;i++) line(ctx,projectPoint(floor[i],view),projectPoint(floor[(i+1)%4],view),"#314353",1.2*view.dpr);
+  for(let i=1;i<4;i++){const t=i/4;line(ctx,projectPoint([t,0,0],view),projectPoint([t,1,0],view),"#182735");line(ctx,projectPoint([0,t,0],view),projectPoint([1,t,0],view),"#182735");}
+  if(view.mode==="3d") for(let i=0;i<4;i++){line(ctx,projectPoint(roof[i],view),projectPoint(roof[(i+1)%4],view),"#233140");line(ctx,projectPoint(floor[i],view),projectPoint(roof[i],view),"#233140");}
 }
 function drawStage() {
   if (!project) return; const canvas=$("stage"), view=projection(canvas), ctx=canvas.getContext("2d"); ctx.clearRect(0,0,view.width,view.height); drawRoom(ctx,view);
   project.speakers.forEach((speaker) => { const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view); ctx.beginPath();ctx.arc(...p,5*view.dpr,0,Math.PI*2);ctx.fillStyle="#778899";ctx.fill();ctx.fillStyle="#8393a5";ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(speaker.id,p[0]+7*view.dpr,p[1]); });
-  project.spatialSources.forEach((source) => { const p=projectPoint(source.position,view), floor=projectPoint([source.position[0],source.position[1],0],view); line(ctx,floor,p,source.id===selectedSource?"#62b9ff":"#36546a",1.5*view.dpr);ctx.beginPath();ctx.arc(...p,(source.id===selectedSource?8:5)*view.dpr,0,Math.PI*2);ctx.fillStyle=source.id===selectedSource?"#62b9ff":"#3a607a";ctx.fill(); });
+  project.spatialSources.forEach((source) => {
+    const p=projectPoint(source.position,view),floor=projectPoint([source.position[0],source.position[1],0],view),active=source.id===selectedSource;
+    if(view.mode==="3d")line(ctx,floor,p,active?"#62b9ff":"#36546a",1.5*view.dpr);
+    ctx.beginPath();ctx.arc(...p,(active?8:5)*view.dpr,0,Math.PI*2);ctx.fillStyle=active?"#62b9ff":"#3a607a";ctx.fill();
+    if(view.mode==="2d"){ctx.fillStyle=active?"#b9e1ff":"#63839a";ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(`${source.id} · Z ${(source.position[2]*project.room.height_m).toFixed(1)}m`,p[0]+9*view.dpr,p[1]-7*view.dpr);}
+  });
   if (fired && performance.now()-fired.at<550) { const p=projectPoint(fired.position,view),r=(performance.now()-fired.at)/550*45*view.dpr;ctx.beginPath();ctx.arc(...p,r,0,Math.PI*2);ctx.strokeStyle=`rgba(98,185,255,${1-r/(45*view.dpr)})`;ctx.lineWidth=2*view.dpr;ctx.stroke();requestAnimationFrame(drawStage); }
 }
-$("stage").addEventListener("pointerdown", (event) => {
-  if (editMode || !selected()) return; const canvas=$("stage"),rect=canvas.getBoundingClientRect(),view=projection(canvas),dpr=view.dpr;
-  const position=unprojectPoint((event.clientX-rect.left)*dpr,(event.clientY-rect.top)*dpr,selected().position[2],view);
-  selected().position=position; send({ type:"spatial.trigger", id:selectedSource, position }); drawStage();
+function pointerInCanvas(event,canvas){const rect=canvas.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}
+function pointerDistance(points){const values=[...points.values()];return values.length<2?1:Math.hypot(values[0].x-values[1].x,values[0].y-values[1].y);}
+function redrawViews(){drawStage();drawLayout();syncViewControls();}
+function setZoom(value){camera.zoom=Math.max(0.5,Math.min(3,Number(value)||1));redrawViews();}
+function resetCamera(){camera.az=0;camera.el=0.95;camera.zoom=1;camera.preset="iso";redrawViews();}
+const stageCanvas=$("stage");
+stageCanvas.addEventListener("pointerdown",(event)=>{
+  const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);stageCanvas.setPointerCapture(event.pointerId);
+  if(stagePointers.size===2&&camera.mode==="3d"){stagePinch={distance:pointerDistance(stagePointers),zoom:camera.zoom};stageGesture=null;return;}
+  stageGesture={pointer:event.pointerId,...point,az:camera.az,el:camera.el,moved:false};
 });
+stageCanvas.addEventListener("pointermove",(event)=>{
+  if(!stagePointers.has(event.pointerId))return;const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);
+  if(stagePinch&&stagePointers.size>=2){setZoom(stagePinch.zoom*pointerDistance(stagePointers)/stagePinch.distance);return;}
+  if(!stageGesture||stageGesture.pointer!==event.pointerId||camera.mode!=="3d")return;
+  const dx=point.x-stageGesture.x,dy=point.y-stageGesture.y;if(Math.hypot(dx,dy)>6)stageGesture.moved=true;
+  if(stageGesture.moved){camera.az=stageGesture.az+dx*0.008;camera.el=Math.max(0.15,Math.min(1.48,stageGesture.el-dy*0.006));camera.preset="custom";redrawViews();}
+});
+function endStagePointer(event){
+  const point=pointerInCanvas(event,stageCanvas),tap=stageGesture?.pointer===event.pointerId&&!stageGesture.moved&&!stagePinch;
+  stagePointers.delete(event.pointerId);if(stagePointers.size<2)stagePinch=null;
+  if(tap&&!editMode&&selected()){const view=projection(stageCanvas),position=unprojectPoint(point.x*view.dpr,point.y*view.dpr,selected().position[2],view);selected().position=position;send({type:"spatial.trigger",id:selectedSource,position});drawStage();}
+  if(stageGesture?.pointer===event.pointerId)stageGesture=null;
+}
+stageCanvas.addEventListener("pointerup",endStagePointer);
+stageCanvas.addEventListener("pointercancel",(event)=>{stagePointers.delete(event.pointerId);stageGesture=null;stagePinch=null;});
+stageCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;event.preventDefault();setZoom(camera.zoom*Math.exp(-event.deltaY*0.0015));},{passive:false});
 $("height").addEventListener("input", () => { const source=selected(); if (!source)return; source.position[2]=Number($("height").value); updateHeight(); drawStage(); });
 function updateHeight() { const source=selected(); const value=source?.position[2] ?? 0; $("height-value").textContent=project?`${(value*project.room.height_m).toFixed(1)}m`:"0m"; }
 
@@ -134,9 +188,48 @@ function drawLayout() {
   if (!project || $("settings").hidden) return; const canvas=$("layout-stage"),view=projection(canvas),ctx=canvas.getContext("2d");ctx.clearRect(0,0,view.width,view.height);drawRoom(ctx,view);
   project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view);ctx.beginPath();ctx.arc(...p,9*view.dpr,0,Math.PI*2);ctx.fillStyle=speakerDrag?.id===speaker.id?"#fff":"#62b9ff";ctx.fill();ctx.fillStyle="#dbeeff";ctx.font=`${10*view.dpr}px system-ui`;ctx.fillText(`${speaker.id} · ${speaker.z_m.toFixed(1)}m`,p[0]+12*view.dpr,p[1]);});
 }
-$("layout-stage").addEventListener("pointerdown",(event)=>{if(!project)return;const canvas=$("layout-stage"),rect=canvas.getBoundingClientRect(),view=projection(canvas),px=(event.clientX-rect.left)*view.dpr,py=(event.clientY-rect.top)*view.dpr;let best=null,dist=Infinity;project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view),d=Math.hypot(px-p[0],py-p[1]);if(d<dist){dist=d;best=speaker;}});if(best&&dist<28*view.dpr){speakerDrag={id:best.id,pointer:event.pointerId};canvas.setPointerCapture(event.pointerId);}});
-$("layout-stage").addEventListener("pointermove",(event)=>{if(!speakerDrag||event.pointerId!==speakerDrag.pointer)return;const speaker=project.speakers.find((item)=>item.id===speakerDrag.id),canvas=$("layout-stage"),rect=canvas.getBoundingClientRect(),view=projection(canvas);if(!speaker)return;const position=unprojectPoint((event.clientX-rect.left)*view.dpr,(event.clientY-rect.top)*view.dpr,speaker.z_m/project.room.height_m,view);speaker.x_m=position[0]*project.room.width_m;speaker.y_m=position[1]*project.room.depth_m;drawLayout();});
-$("layout-stage").addEventListener("pointerup",(event)=>{if(!speakerDrag||event.pointerId!==speakerDrag.pointer)return;const speaker=project.speakers.find((item)=>item.id===speakerDrag.id);if(speaker)send({type:"speaker.update",id:speaker.id,patch:{x_m:speaker.x_m,y_m:speaker.y_m}});speakerDrag=null;});
+const layoutCanvas=$("layout-stage");
+layoutCanvas.addEventListener("pointerdown",(event)=>{
+  if(!project)return;const point=pointerInCanvas(event,layoutCanvas);layoutPointers.set(event.pointerId,point);layoutCanvas.setPointerCapture(event.pointerId);
+  if(layoutPointers.size===2&&camera.mode==="3d"){layoutPinch={distance:pointerDistance(layoutPointers),zoom:camera.zoom};speakerDrag=null;layoutOrbit=null;return;}
+  const view=projection(layoutCanvas),px=point.x*view.dpr,py=point.y*view.dpr;let best=null,dist=Infinity;
+  project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view),d=Math.hypot(px-p[0],py-p[1]);if(d<dist){dist=d;best=speaker;}});
+  if(best&&dist<28*view.dpr)speakerDrag={id:best.id,pointer:event.pointerId};
+  else if(camera.mode==="3d")layoutOrbit={pointer:event.pointerId,...point,az:camera.az,el:camera.el};
+});
+layoutCanvas.addEventListener("pointermove",(event)=>{
+  if(!layoutPointers.has(event.pointerId))return;const point=pointerInCanvas(event,layoutCanvas);layoutPointers.set(event.pointerId,point);
+  if(layoutPinch&&layoutPointers.size>=2){setZoom(layoutPinch.zoom*pointerDistance(layoutPointers)/layoutPinch.distance);return;}
+  if(speakerDrag&&event.pointerId===speakerDrag.pointer){const speaker=project.speakers.find((item)=>item.id===speakerDrag.id),view=projection(layoutCanvas);if(!speaker)return;const position=unprojectPoint(point.x*view.dpr,point.y*view.dpr,speaker.z_m/project.room.height_m,view);speaker.x_m=position[0]*project.room.width_m;speaker.y_m=position[1]*project.room.depth_m;drawLayout();return;}
+  if(layoutOrbit&&event.pointerId===layoutOrbit.pointer){camera.az=layoutOrbit.az+(point.x-layoutOrbit.x)*0.008;camera.el=Math.max(0.15,Math.min(1.48,layoutOrbit.el-(point.y-layoutOrbit.y)*0.006));camera.preset="custom";redrawViews();}
+});
+function endLayoutPointer(event){
+  layoutPointers.delete(event.pointerId);if(layoutPointers.size<2)layoutPinch=null;
+  if(speakerDrag?.pointer===event.pointerId){const speaker=project.speakers.find((item)=>item.id===speakerDrag.id);if(speaker)send({type:"speaker.update",id:speaker.id,patch:{x_m:speaker.x_m,y_m:speaker.y_m}});speakerDrag=null;}
+  if(layoutOrbit?.pointer===event.pointerId)layoutOrbit=null;
+}
+layoutCanvas.addEventListener("pointerup",endLayoutPointer);
+layoutCanvas.addEventListener("pointercancel",(event)=>{layoutPointers.delete(event.pointerId);speakerDrag=null;layoutOrbit=null;layoutPinch=null;});
+layoutCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;event.preventDefault();setZoom(camera.zoom*Math.exp(-event.deltaY*0.0015));},{passive:false});
+
+function syncViewControls(){
+  document.querySelectorAll("[data-view-toolbar]").forEach((toolbar)=>{toolbar.dataset.mode=camera.mode;toolbar.querySelectorAll("[data-view]").forEach((button)=>button.classList.toggle("on",button.dataset.view===camera.mode));});
+  document.querySelectorAll("[data-angle]").forEach((button)=>button.classList.toggle("on",button.dataset.angle===camera.preset));
+  document.querySelector(".axis-hint").textContent=camera.mode==="3d"?"tap — trigger · drag — orbit · pinch — zoom":"tap — trigger · Z — height";
+}
+function setViewMode(mode){camera.mode=mode==="2d"?"2d":"3d";localStorage.setItem("pps-view",camera.mode);stageGesture=null;stagePinch=null;layoutOrbit=null;layoutPinch=null;redrawViews();}
+function applyAngle(name){
+  camera.mode="3d";
+  camera.preset=name;
+  if(name==="front"){camera.az=0;camera.el=0.28;camera.zoom=1;}
+  else if(name==="side"){camera.az=Math.PI/2;camera.el=0.42;camera.zoom=1;}
+  else if(name==="top"){camera.az=0;camera.el=1.45;camera.zoom=1;}
+  else if(name==="reset"||name==="iso"){resetCamera();return;}
+  redrawViews();
+}
+document.querySelectorAll("[data-view]").forEach((button)=>button.addEventListener("click",()=>setViewMode(button.dataset.view)));
+document.querySelectorAll("[data-angle]").forEach((button)=>button.addEventListener("click",()=>applyAngle(button.dataset.angle)));
+const savedView=localStorage.getItem("pps-view");if(savedView==="2d"||savedView==="3d")camera.mode=savedView;
 
 function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value)}}}); }
 ["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur"].forEach((id)=>$(id).addEventListener("change",patchProject));
