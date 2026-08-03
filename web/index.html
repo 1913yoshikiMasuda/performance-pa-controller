@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#0a0d12">
+  <title>Performance PA Controller</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="brand"><b>Performance PA</b><span>3D OSC Controller</span></div>
+      <div id="project-name" class="project-name">—</div>
+      <div id="status" class="status"><i></i><span>Connecting</span></div>
+      <button id="settings-open" class="quiet">SETUP</button>
+      <button id="mode" class="mode">LIVE</button>
+    </header>
+
+    <main>
+      <section class="spatial-shell">
+        <aside class="source-rail">
+          <div class="section-title"><span>SPATIAL</span><button id="spatial-add" title="Add source">＋</button></div>
+          <div id="sources"></div>
+        </aside>
+        <div class="stage-wrap">
+          <canvas id="stage"></canvas>
+          <div class="axis-hint">X / Y — tap stage · Z — height</div>
+        </div>
+        <aside class="height-control">
+          <span>Z</span>
+          <input id="height" type="range" min="0" max="1" step="0.001" value="0.5" orient="vertical">
+          <output id="height-value">50%</output>
+        </aside>
+      </section>
+
+      <section class="general-shell">
+        <div class="general-head"><span>GENERAL CONTROLS</span><small>Independent from spatial routing</small>
+          <div class="edit-actions"><button id="pad-add">＋ PAD</button><button id="fader-add">＋ FADER</button></div>
+        </div>
+        <div id="control-board"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="settings" class="sheet" hidden>
+    <div class="sheet-card">
+      <div class="sheet-head"><div><b>PROJECT SETUP</b><span>3D layout and OSC destination</span></div><button id="settings-close">×</button></div>
+      <div class="settings-grid">
+        <label>Project name<input id="set-name"></label>
+        <label>OSC host<input id="set-host" inputmode="url"></label>
+        <label>OSC port<input id="set-port" type="number" min="1" max="65535"></label>
+        <label>Namespace<input id="set-namespace"></label>
+      </div>
+      <div class="subhead">ROOM <small>metres</small></div>
+      <div class="settings-grid three">
+        <label>Width X<input id="room-width" type="number" min="0.1" step="0.1"></label>
+        <label>Depth Y<input id="room-depth" type="number" min="0.1" step="0.1"></label>
+        <label>Height Z<input id="room-height" type="number" min="0.1" step="0.1"></label>
+      </div>
+      <div class="layout-area">
+        <canvas id="layout-stage"></canvas>
+        <div class="speaker-panel">
+          <div class="subhead">SPEAKERS <button id="speaker-add">＋ SPEAKER</button></div>
+          <div id="speakers"></div>
+        </div>
+      </div>
+      <details>
+        <summary>Advanced DBAP</summary>
+        <div class="settings-grid two">
+          <label>Rolloff dB<input id="dbap-rolloff" type="number" min="0.1" step="0.1"></label>
+          <label>Blur metres<input id="dbap-blur" type="number" min="0.01" step="0.01"></label>
+        </div>
+      </details>
+      <div class="sheet-footer">
+        <button id="project-import">IMPORT JSON</button><input id="project-file" type="file" accept="application/json" hidden>
+        <button id="project-export">EXPORT JSON</button>
+        <span>Changes save automatically</span>
+      </div>
+    </div>
+  </div>
+  <div id="toast" role="status"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

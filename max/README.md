@@ -1,0 +1,25 @@
+# Max receiver
+
+`performance-pa-controller.maxpat`はOSC疎通確認用の最小パッチです。
+
+```text
+[udpreceive 7400]
+      |
+  [oscparse]
+      |
+  [list trim]
+      |
+  [print pps]
+```
+
+Max Consoleには例えば次のlistが表示されます。
+
+```text
+pps spatial S01 position 0.5 0.5 0.5
+pps spatial S01 gains 0.5 0.5 0.5 0.5
+pps spatial S01 trigger 1
+pps pad P01 trigger 2
+pps fader F01 value 0.75
+```
+
+実際の利用では`route pps`、`route spatial pad fader`、`route S01 S02 ...`を組み合わせます。OSC Bundle内の`position`と`gains`を保存し、`trigger`到着時に発音する構成を推奨します。
