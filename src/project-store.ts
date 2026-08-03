@@ -48,7 +48,11 @@ export function parseProject(value: unknown): Project {
     osc: { host: String(raw.osc?.host ?? fallback.osc.host).trim() || fallback.osc.host,
       port: Math.max(1, Math.min(65535, Math.floor(finite(raw.osc?.port, fallback.osc.port)))), namespace: namespace.startsWith("/") ? namespace : `/${namespace}` },
     room,
-    dbap: { rolloff_db: Math.max(0.1, finite(raw.dbap?.rolloff_db, fallback.dbap.rolloff_db)), blur_m: Math.max(0.01, finite(raw.dbap?.blur_m, fallback.dbap.blur_m)) },
+    dbap: {
+      rolloff_db: Math.max(0.1, finite(raw.dbap?.rolloff_db, fallback.dbap.rolloff_db)),
+      blur_m: Math.max(0.01, finite(raw.dbap?.blur_m, fallback.dbap.blur_m)),
+      ...(finite(raw.dbap?.maxDist_m, 0) > 0 ? { maxDist_m: finite(raw.dbap?.maxDist_m, 0) } : {})
+    },
     speakers,
     spatialSources,
     controls,

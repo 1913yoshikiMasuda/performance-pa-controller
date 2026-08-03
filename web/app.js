@@ -164,18 +164,22 @@ $("control-board").addEventListener("pointerup", (event) => {
 });
 $("control-board").addEventListener("pointercancel", (event) => { controlDrag = null; controlResize = null; if(faderTouch?.pointer===event.pointerId)endFaderTouch(event,false); });
 
-const HEIGHT_VIS = 0.7;
 function projection(canvas) {
   const rect = canvas.getBoundingClientRect(); const dpr = devicePixelRatio || 1;
   if (canvas.width !== Math.round(rect.width*dpr) || canvas.height !== Math.round(rect.height*dpr)) { canvas.width = Math.round(rect.width*dpr); canvas.height = Math.round(rect.height*dpr); }
   const width = rect.width*dpr, height = rect.height*dpr, pad = Math.min(width,height)*0.1;
-  if (camera.mode === "2d") return { mode:"2d",dpr,width,height,x0:pad,y0:pad,rw:width-pad*2,rh:height-pad*2 };
-  const radius=Math.hypot(0.5,0.5,HEIGHT_VIS/2),scale=(Math.min(width,height)-pad*2)/(radius*2)*camera.zoom;
-  const centerY=-(HEIGHT_VIS/2)*Math.cos(camera.el);
-  return { mode:"3d",dpr,width,height,scale,ox:width/2,oy:height/2-centerY*scale };
+  if (camera.mode === "2d") {
+    const roomAspect=project.room.width_m/project.room.depth_m,availableWidth=width-pad*2,availableHeight=height-pad*2;
+    let rw=availableWidth,rh=rw/roomAspect;if(rh>availableHeight){rh=availableHeight;rw=rh*roomAspect;}
+    return { mode:"2d",dpr,width,height,x0:(width-rw)/2,y0:(height-rh)/2,rw,rh };
+  }
+  const corners=[];for(const x of [0,1])for(const y of [0,1])for(const z of [0,1])corners.push(raw3d([x,y,z]));
+  const xs=corners.map((point)=>point[0]),ys=corners.map((point)=>point[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  const scale=Math.min((width-pad*2)/Math.max(.001,maxX-minX),(height-pad*2)/Math.max(.001,maxY-minY))*camera.zoom;
+  return { mode:"3d",dpr,width,height,scale,ox:width/2-(minX+maxX)/2*scale,oy:height/2-(minY+maxY)/2*scale };
 }
 function raw3d(p) {
-  const x=p[0]-0.5,y=p[1]-0.5,z=(p[2]||0)*HEIGHT_VIS;
+  const x=(p[0]-0.5)*project.room.width_m,y=(p[1]-0.5)*project.room.depth_m,z=(p[2]||0)*project.room.height_m;
   const rx=x*Math.cos(camera.az)+y*Math.sin(camera.az),depth=x*Math.sin(camera.az)-y*Math.cos(camera.az);
   return [rx,-depth*Math.sin(camera.el)-z*Math.cos(camera.el)];
 }
@@ -186,9 +190,9 @@ function projectPoint(p, view) {
 function unprojectPoint(x, y, z, view) {
   if(view.mode==="2d") return [clamp01((x-view.x0)/view.rw),clamp01((y-view.y0)/view.rh),z];
   const rx=(x-view.ox)/view.scale,ry=(y-view.oy)/view.scale;
-  const depth=-(ry+z*HEIGHT_VIS*Math.cos(camera.el))/Math.sin(camera.el);
+  const depth=-(ry+z*project.room.height_m*Math.cos(camera.el))/Math.sin(camera.el);
   const px=rx*Math.cos(camera.az)+depth*Math.sin(camera.az),py=rx*Math.sin(camera.az)-depth*Math.cos(camera.az);
-  return [clamp01(px+0.5),clamp01(py+0.5),z];
+  return [clamp01(px/project.room.width_m+0.5),clamp01(py/project.room.depth_m+0.5),z];
 }
 function line(ctx,a,b,color,width=1) { ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke(); }
 function drawRoom(ctx, view) {
@@ -264,7 +268,7 @@ function updateHeight() { const source=selected(); const value=source?.position[
 
 function renderSettings() {
   if (!project) return;
-  const values={"set-name":project.name,"set-host":project.osc.host,"set-port":project.osc.port,"set-namespace":project.osc.namespace,"room-width":project.room.width_m,"room-depth":project.room.depth_m,"room-height":project.room.height_m,"dbap-rolloff":project.dbap.rolloff_db,"dbap-blur":project.dbap.blur_m};
+  const values={"set-name":project.name,"set-host":project.osc.host,"set-port":project.osc.port,"set-namespace":project.osc.namespace,"room-width":project.room.width_m,"room-depth":project.room.depth_m,"room-height":project.room.height_m,"dbap-rolloff":project.dbap.rolloff_db,"dbap-blur":project.dbap.blur_m,"dbap-range":project.dbap.maxDist_m||0};
   Object.entries(values).forEach(([id,value])=>{ if(document.activeElement!==$(id)) $(id).value=value; });
   $("speakers").replaceChildren(...project.speakers.map((speaker)=>{
     const row=document.createElement("div");row.className="speaker-row";const name=document.createElement("b");name.textContent=`◇ ${speaker.id}`;row.append(name);
@@ -319,8 +323,8 @@ document.querySelectorAll("[data-view]").forEach((button)=>button.addEventListen
 document.querySelectorAll("[data-angle]").forEach((button)=>button.addEventListener("click",()=>applyAngle(button.dataset.angle)));
 const savedView=localStorage.getItem("pps-view");if(savedView==="2d"||savedView==="3d")camera.mode=savedView;
 
-function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value)}}}); }
-["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur"].forEach((id)=>$(id).addEventListener("change",patchProject));
+function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value),maxDist_m:Number($("dbap-range").value)}}}); }
+["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur","dbap-range"].forEach((id)=>$(id).addEventListener("change",patchProject));
 function applyTheme(next){theme=next==="hype"?"hype":"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").textContent=`THEME · ${theme.toUpperCase()}`;if(project)renderSources();requestAnimationFrame(redrawViews);}
 $("theme").addEventListener("click",()=>applyTheme(theme==="studio"?"hype":"studio"));
 applyTheme(theme);

@@ -24,4 +24,11 @@ describe("project parsing", () => {
     const parsed = parseProject(project);
     expect(parsed.controls.map(({ w, h }) => [w, h])).toEqual([[0.24, 0.42], [0.16, 0.6]]);
   });
+  it("preserves a positive DBAP range and treats zero as unlimited", () => {
+    const ranged = defaultProject();
+    ranged.dbap.maxDist_m = 4.5;
+    expect(parseProject(ranged).dbap.maxDist_m).toBe(4.5);
+    ranged.dbap.maxDist_m = 0;
+    expect(parseProject(ranged).dbap.maxDist_m).toBeUndefined();
+  });
 });

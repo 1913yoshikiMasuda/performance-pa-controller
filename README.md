@@ -6,7 +6,7 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 ## 機能
 
 - 3Dスピーカーレイアウト（X/Y/Z、出力ch）
-- 3D DBAPによる定電力ゲイン計算
+- 3D DBAPによる定電力ゲイン計算（距離範囲外のSpeakerを除外可能）
 - 2D / 3Dビュー切替、3Dオービット、ピンチ/ホイールズーム
 - ISO / FRONT / SIDE / TOPの3Dアングルプリセット
 - Spatial Sourceを選択し、Stageをタップして定位＋発火
@@ -68,7 +68,9 @@ npm run check
 
 Sourceは色付き円と`SRC · S01`、Speakerは菱形と`SP · SP01`で表示されます。選択Sourceの各SpeakerへのDBAP gainは、接続線の太さ・Speaker周囲のリング・数値%で確認できます。この表示値はWeb側の再計算ではなく、OSCへ送るNode側のgain計算結果です。
 
-Stage左上で2D / 3Dを切り替えられます。室内面に触れた瞬間に選択Sourceが移動して`trigger 1`を送り、指をつけたままドラッグするとposition/gainsが連続更新され、指を離すと`trigger 0`を送ります。2Dの室外タップは無視され、3Dの室外ドラッグは視点回転になります。Zフェーダーはgateを変えずに定位だけを更新します。ピンチまたはマウスホイールでズームし、ISO / FRONT / SIDE / TOPで視点を即座に切り替えられます。
+Stage左上で2D / 3Dを切り替えられます。どちらもProjectで設定した部屋の実寸比を維持し、2DはWidth × Depthの上面投影です。室内面に触れた瞬間に選択Sourceが移動して`trigger 1`を送り、指をつけたままドラッグするとposition/gainsが連続更新され、指を離すと`trigger 0`を送ります。2Dの室外タップは無視され、3Dの室外ドラッグは視点回転になります。Zフェーダーはgateを変えずに定位だけを更新します。ピンチまたはマウスホイールでズームし、ISO / FRONT / SIDE / TOPで視点を即座に切り替えられます。
+
+Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を超えたSpeakerのgainは`0`になります。残ったSpeaker間で定電力に再正規化され、全Speakerが範囲外の場合は最近傍1台へフォールバックします。`0`は範囲制限なしです。
 
 ### General Controls
 

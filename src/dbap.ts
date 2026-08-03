@@ -12,10 +12,21 @@ export function dbapGains(position: XYZ, project: Project): number[] {
   const [x, y, z] = normToMeters(position.map(clamp01) as XYZ, project.room);
   const alpha = project.dbap.rolloff_db / (20 * Math.log10(2));
   const blur2 = project.dbap.blur_m ** 2;
+  const maxDistance = project.dbap.maxDist_m;
+  const distances: number[] = [];
   const weights = project.speakers.map((speaker) => {
     const distance2 = (x - speaker.x_m) ** 2 + (y - speaker.y_m) ** 2 + (z - speaker.z_m) ** 2;
+    const distance = Math.sqrt(distance2);
+    distances.push(distance);
+    if (maxDistance && distance > maxDistance) return 0;
     return 1 / Math.pow(Math.sqrt(distance2 + blur2), alpha);
   });
-  const norm = Math.sqrt(weights.reduce((sum, gain) => sum + gain * gain, 0)) || 1;
+  let sumSquares = weights.reduce((sum, gain) => sum + gain * gain, 0);
+  if (sumSquares === 0 && weights.length) {
+    const nearest = distances.reduce((best, distance, index) => distance < distances[best] ? index : best, 0);
+    weights[nearest] = 1;
+    sumSquares = 1;
+  }
+  const norm = Math.sqrt(sumSquares) || 1;
   return weights.map((gain) => gain / norm);
 }
