@@ -43,7 +43,7 @@ export interface Project {
   name: string;
   osc: { host: string; port: number; namespace: string };
   room: Room;
-  dbap: { rolloff_db: number; blur_m: number; maxDist_m?: number };
+  dbap: { rolloff_db: number; blur_m: number };
   speakers: Speaker[];
   spatialSources: SpatialSource[];
   controls: FreeControl[];
