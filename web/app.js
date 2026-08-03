@@ -268,7 +268,7 @@ function updateHeight() { const source=selected(); const value=source?.position[
 
 function renderSettings() {
   if (!project) return;
-  const values={"set-name":project.name,"set-host":project.osc.host,"set-port":project.osc.port,"set-namespace":project.osc.namespace,"room-width":project.room.width_m,"room-depth":project.room.depth_m,"room-height":project.room.height_m,"dbap-rolloff":project.dbap.rolloff_db,"dbap-blur":project.dbap.blur_m};
+  const values={"set-name":project.name,"set-host":project.osc.host,"set-port":project.osc.port,"set-namespace":project.osc.namespace,"room-width":project.room.width_m,"room-depth":project.room.depth_m,"room-height":project.room.height_m,"dbap-rolloff":project.dbap.rolloff_db,"dbap-blur":project.dbap.blur_m,"dbap-range":project.dbap.maxDist_m||0};
   Object.entries(values).forEach(([id,value])=>{ if(document.activeElement!==$(id)) $(id).value=value; });
   $("speakers").replaceChildren(...project.speakers.map((speaker)=>{
     const row=document.createElement("div");row.className="speaker-row";const name=document.createElement("b");name.textContent=`◇ ${speaker.id}`;row.append(name);
@@ -323,8 +323,8 @@ document.querySelectorAll("[data-view]").forEach((button)=>button.addEventListen
 document.querySelectorAll("[data-angle]").forEach((button)=>button.addEventListener("click",()=>applyAngle(button.dataset.angle)));
 const savedView=localStorage.getItem("pps-view");if(savedView==="2d"||savedView==="3d")camera.mode=savedView;
 
-function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value)}}}); }
-["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur"].forEach((id)=>$(id).addEventListener("change",patchProject));
+function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value),maxDist_m:Number($("dbap-range").value)}}}); }
+["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur","dbap-range"].forEach((id)=>$(id).addEventListener("change",patchProject));
 function applyTheme(next){theme=next==="hype"?"hype":"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").textContent=`THEME · ${theme.toUpperCase()}`;if(project)renderSources();requestAnimationFrame(redrawViews);}
 $("theme").addEventListener("click",()=>applyTheme(theme==="studio"?"hype":"studio"));
 applyTheme(theme);

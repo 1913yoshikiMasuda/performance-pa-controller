@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dbapGains, normToMeters } from "../src/dbap.js";
+import { dbapGains, normToMeters, rangeTaper } from "../src/dbap.js";
 import { defaultProject } from "../src/types.js";
 
 describe("3D DBAP", () => {
@@ -21,42 +21,41 @@ describe("3D DBAP", () => {
     expect(dbapGains([0.5, 0, 0], project)[0]).toBeGreaterThan(dbapGains([0.5, 0, 1], project)[0]);
   });
 
-  it("moves continuously between speakers without changing the active set", () => {
+  it("zeros speakers outside the configured range and keeps constant power", () => {
     const project = defaultProject();
-    project.speakers = [
-      { id: "LEFT", x_m: 0, y_m: 0, z_m: 0, out_ch: 1 },
-      { id: "RIGHT", x_m: 10, y_m: 0, z_m: 0, out_ch: 2 }
-    ];
-    const leftGains = [0.4, 0.45, 0.5].map((x) => dbapGains([x, 0, 0], project)[0]);
-    expect(leftGains[0]).toBeGreaterThan(leftGains[1]);
-    expect(leftGains[1]).toBeGreaterThan(leftGains[2]);
-    expect(leftGains.every((gain) => gain > 0)).toBe(true);
+    project.dbap.maxDist_m = 3;
+    const gains = dbapGains([0, 0, 0.5], project);
+    expect(gains[0]).toBe(1);
+    expect(gains.slice(1)).toEqual([0, 0, 0]);
+    expect(gains.reduce((sum, value) => sum + value * value, 0)).toBeCloseTo(1, 8);
   });
 
-  it("uses rolloff as spatial focus", () => {
-    const project = defaultProject();
-    project.speakers = [
-      { id: "NEAR", x_m: 1, y_m: 0, z_m: 0, out_ch: 1 },
-      { id: "FAR", x_m: 9, y_m: 0, z_m: 0, out_ch: 2 }
-    ];
-    project.dbap.rolloff_db = 6;
-    const wide = dbapGains([0, 0, 0], project);
-    project.dbap.rolloff_db = 18;
-    const tight = dbapGains([0, 0, 0], project);
-    expect(tight[0] / tight[1]).toBeGreaterThan(wide[0] / wide[1]);
+  it("eases gains through the outer quarter of the range", () => {
+    expect(rangeTaper(3.75, 5)).toBe(1);
+    expect(rangeTaper(4, 5)).toBeGreaterThan(rangeTaper(4.5, 5));
+    expect(rangeTaper(4.5, 5)).toBeGreaterThan(rangeTaper(4.9, 5));
+    expect(rangeTaper(5, 5)).toBe(0);
   });
 
-  it("zeros only normalized outputs below minus 60 dB", () => {
+  it("changes a ranged speaker continuously before reaching zero", () => {
     const project = defaultProject();
-    project.room.width_m = 100;
-    project.dbap.rolloff_db = 12;
-    project.dbap.blur_m = 0.1;
     project.speakers = [
-      { id: "NEAR", x_m: 0, y_m: 0, z_m: 0, out_ch: 1 },
-      { id: "INAUDIBLE", x_m: 100, y_m: 0, z_m: 0, out_ch: 2 }
+      { id: "FAR", x_m: 0, y_m: 0, z_m: 0, out_ch: 1 },
+      { id: "NEAR", x_m: 4.5, y_m: 0, z_m: 0, out_ch: 2 }
     ];
-    const gains = dbapGains([0, 0, 0], project);
-    expect(gains[0]).toBeCloseTo(1, 10);
-    expect(gains[1]).toBe(0);
+    project.dbap.maxDist_m = 5;
+    const gains = [4, 4.5, 4.9, 5].map((x) => dbapGains([x / 10, 0, 0], project)[0]);
+    expect(gains[0]).toBeGreaterThan(gains[1]);
+    expect(gains[1]).toBeGreaterThan(gains[2]);
+    expect(gains[2]).toBeGreaterThan(gains[3]);
+    expect(gains[3]).toBe(0);
+  });
+
+  it("falls back to the nearest speaker when the range contains none", () => {
+    const project = defaultProject();
+    project.dbap.maxDist_m = 0.1;
+    const gains = dbapGains([0.5, 0.5, 0.5], project);
+    expect(gains.filter((gain) => gain > 0)).toHaveLength(1);
+    expect(gains.reduce((sum, value) => sum + value * value, 0)).toBeCloseTo(1, 8);
   });
 });

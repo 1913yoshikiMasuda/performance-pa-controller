@@ -6,7 +6,7 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 ## 機能
 
 - 3Dスピーカーレイアウト（X/Y/Z、出力ch）
-- 3D DBAPによる連続的な定電力ゲイン計算
+- 3D DBAPによる定電力ゲイン計算（距離範囲外のSpeakerを除外可能）
 - 2D / 3Dビュー切替、3Dオービット、ピンチ/ホイールズーム
 - ISO / FRONT / SIDE / TOPの3Dアングルプリセット
 - Spatial Sourceを選択し、Stageをタップして定位＋発火
@@ -70,7 +70,7 @@ Sourceは色付き円と`SRC · S01`、Speakerは菱形と`SP · SP01`で表示�
 
 Stage左上で2D / 3Dを切り替えられます。どちらもProjectで設定した部屋の実寸比を維持し、2DはWidth × Depthの上面投影です。室内面に触れた瞬間に選択Sourceが移動して`trigger 1`を送り、指をつけたままドラッグするとposition/gainsが連続更新され、指を離すと`trigger 0`を送ります。2Dの室外タップは無視され、3Dの室外ドラッグは視点回転になります。Zフェーダーはgateを変えずに定位だけを更新します。ピンチまたはマウスホイールでズームし、ISO / FRONT / SIDE / TOPで視点を即座に切り替えられます。
 
-Advanced DBAPの`Spatial Focus`は距離が倍になったときの減衰量です。`6`は広く滑らか、`12`は近傍中心、`18`はかなり局所的になります。Speakerを距離で途中除外せず全体を連続的に定電力計算し、正規化後に−60dB未満となった実質聞こえないgainだけを`0`として送ります。
+Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を超えたSpeakerのgainは`0`になります。境界で急に切れないよう、Rangeの外周25%ではSmoothstepカーブで連続的に減衰します。残ったSpeaker間で定電力に再正規化され、全Speakerが範囲外の場合は最近傍1台へフォールバックします。`0`は範囲制限なしです。
 
 ### General Controls
 

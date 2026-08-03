@@ -50,7 +50,8 @@ export function parseProject(value: unknown): Project {
     room,
     dbap: {
       rolloff_db: Math.max(0.1, finite(raw.dbap?.rolloff_db, fallback.dbap.rolloff_db)),
-      blur_m: Math.max(0.01, finite(raw.dbap?.blur_m, fallback.dbap.blur_m))
+      blur_m: Math.max(0.01, finite(raw.dbap?.blur_m, fallback.dbap.blur_m)),
+      ...(finite(raw.dbap?.maxDist_m, 0) > 0 ? { maxDist_m: finite(raw.dbap?.maxDist_m, 0) } : {})
     },
     speakers,
     spatialSources,
