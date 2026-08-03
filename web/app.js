@@ -1,4 +1,6 @@
 const $ = (id) => document.getElementById(id);
+const performanceSurface=document.querySelector("main");
+for(const eventName of ["contextmenu","selectstart","dragstart"])performanceSurface.addEventListener(eventName,(event)=>event.preventDefault());
 let project = null;
 let socket = null;
 let selectedSource = null;
