@@ -10,7 +10,7 @@
       { "box": { "id": "parse", "maxclass": "newobj", "text": "oscparse", "patching_rect": [36.0, 126.0, 65.0, 22.0] } },
       { "box": { "id": "trim", "maxclass": "newobj", "text": "list trim", "patching_rect": [36.0, 174.0, 58.0, 22.0] } },
       { "box": { "id": "print", "maxclass": "newobj", "text": "print pps", "patching_rect": [36.0, 222.0, 60.0, 22.0] } },
-      { "box": { "id": "note", "maxclass": "comment", "linecount": 5, "text": "Open the Max Console, then trigger the web UI.\nUse route pps -> route spatial pad fader in your patch.\nSpatial position, gains, and trigger arrive in one OSC Bundle.\nSound generation, smoothing, DSP, and Audio I/O remain in Max.", "patching_rect": [190.0, 78.0, 390.0, 85.0] } }
+      { "box": { "id": "note", "maxclass": "comment", "linecount": 6, "text": "Open the Max Console, then trigger the web UI.\nUse route pps -> route spatial pad fader in your patch.\nTouch sends trigger 1; release sends trigger 0.\nPosition and gains update while the gate is held.\nSound generation, smoothing, DSP, and Audio I/O remain in Max.", "patching_rect": [190.0, 78.0, 390.0, 96.0] } }
     ],
     "lines": [
       { "patchline": { "source": ["udp", 0], "destination": ["parse", 0] } },

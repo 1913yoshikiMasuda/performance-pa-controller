@@ -10,23 +10,29 @@
 
 ## Spatial Trigger
 
-1回のStageタップにつき、次の3 messageを同じimmediate OSC Bundleとして送ります。
+Stageの室内面に指が触れた瞬間、次の3 messageを同じimmediate OSC Bundleとして送ります。
 
 ```text
 /pps/spatial/S01/position  <x:float> <y:float> <z:float>
 /pps/spatial/S01/gains     <SP01:float> <SP02:float> ...
-/pps/spatial/S01/trigger   <eventSeq:int>
+/pps/spatial/S01/trigger   1
 ```
 
 `gains`の並び順はProjectのspeaker配列順です。各Speakerの`out_ch`順ではありません。SETUP画面とExport JSONに表示される順序を使います。非空レイアウトでは定電力正規化され、`Σ gain² = 1`です。
 
-Maxが独自に空間化する場合は`position`を利用し、`gains`を無視できます。このコントローラーのDBAPを使う場合は`gains`を各出力へ適用します。`trigger`を受け取ってから発音してください。
+Maxが独自に空間化する場合は`position`を利用し、`gains`を無視できます。このコントローラーのDBAPを使う場合は`gains`を各出力へ適用します。`trigger 1`を受け取ってから発音してください。
 
-`eventSeq`はNode起動中に単調増加します。Projectの永続IDではなく、重複イベント検出用です。
+指を離すかブラウザのpointerがキャンセルされたとき、次を単独messageとして送ります。
+
+```text
+/pps/spatial/S01/trigger   0
+```
+
+したがって`trigger`はイベント番号ではなくgateです。`1`の間を押下中、`0`を解放としてMax側で解釈できます。ブラウザ接続が切れた場合も、Nodeが保持中のgateへ`0`を送ります。
 
 ## Spatial Move
 
-Sourceマーカーのドラッグ中、またはZフェーダーの操作中は、描画フレーム単位に間引いて次のBundleを送ります。
+Stageを押したままのドラッグ中、またはZフェーダーの操作中は、描画フレーム単位に間引いて次のBundleを送ります。
 
 ```text
 /pps/spatial/S01/position  <x:float> <y:float> <z:float>

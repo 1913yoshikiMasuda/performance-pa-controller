@@ -54,12 +54,16 @@ export class OscOutput {
   private message(address: string, args: OscArg[]): OscMessage { return { address: this.address(address), args }; }
   private send(packet: Buffer): void { if (this.ready && this.port) this.port.send(packet, this.config.port, this.config.host); }
 
-  spatial(id: string, position: XYZ, gains: number[], seq: number): void {
+  spatialTrigger(id: string, position: XYZ, gains: number[]): void {
     this.send(encodeBundle([
       this.message(`spatial/${id}/position`, position.map((value) => ({ type: "f", value })) as OscArg[]),
       this.message(`spatial/${id}/gains`, gains.map((value) => ({ type: "f", value }))),
-      this.message(`spatial/${id}/trigger`, [{ type: "i", value: seq }])
+      this.message(`spatial/${id}/trigger`, [{ type: "i", value: 1 }])
     ]));
+  }
+
+  spatialRelease(id: string): void {
+    this.send(encodeMessage(this.message(`spatial/${id}/trigger`, [{ type: "i", value: 0 }])));
   }
 
   spatialMove(id: string, position: XYZ, gains: number[]): void {

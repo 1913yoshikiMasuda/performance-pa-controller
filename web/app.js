@@ -80,8 +80,10 @@ function renderControls() {
       const label = document.createElement("b"); label.textContent = control.id;
       const input = document.createElement("input"); input.type = "range"; input.min = "0"; input.max = "1"; input.step = "0.001"; input.value = control.value;
       const output = document.createElement("output"); output.textContent = `${Math.round(control.value*100)}%`;
-      input.addEventListener("input", () => { output.textContent = `${Math.round(input.value*100)}%`; send({ type:"control.value", id:control.id, value:Number(input.value) }); });
-      element.append(label,input,output); element.addEventListener("pointerdown", (event) => { if (editMode) beginControlDrag(event, control, element); else beginFaderTouch(event,control,element,input,output); });
+      const rail=document.createElement("div");rail.className="fader-rail";rail.innerHTML='<i class="fader-fill"></i><i class="fader-thumb"></i>';
+      element.style.setProperty("--value",control.value);
+      input.addEventListener("input", () => { element.style.setProperty("--value",input.value);output.textContent = `${Math.round(input.value*100)}%`; send({ type:"control.value", id:control.id, value:Number(input.value) }); });
+      element.append(label,rail,output,input); element.addEventListener("pointerdown", (event) => { if (editMode) beginControlDrag(event, control, element); else beginFaderTouch(event,control,element,input,output); });
     }
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
     return element;
@@ -98,7 +100,7 @@ function beginFaderTouch(event,control,element,input,output){
 }
 function updateFaderTouch(event){
   if(!faderTouch||event.pointerId!==faderTouch.pointer)return;const rect=faderTouch.element.getBoundingClientRect(),top=rect.top+22,bottom=rect.bottom-20;
-  const value=clamp01(1-(event.clientY-top)/Math.max(1,bottom-top));faderTouch.control.value=value;faderTouch.input.value=value;faderTouch.output.textContent=`${Math.round(value*100)}%`;send({type:"control.value",id:faderTouch.control.id,value});
+  const value=clamp01(1-(event.clientY-top)/Math.max(1,bottom-top));faderTouch.control.value=value;faderTouch.input.value=value;faderTouch.element.style.setProperty("--value",value);faderTouch.output.textContent=`${Math.round(value*100)}%`;send({type:"control.value",id:faderTouch.control.id,value});
 }
 $("control-board").addEventListener("pointermove", (event) => {
   if(faderTouch){updateFaderTouch(event);return;}
@@ -174,18 +176,21 @@ function flushSpatialMove(){
   if(spatialMoveFrame){cancelAnimationFrame(spatialMoveFrame);spatialMoveFrame=0;}
   if(pendingSpatialMove){send({type:"spatial.move",...pendingSpatialMove});pendingSpatialMove=null;}
 }
-function pickStageSource(point){
-  if(!project)return null;const view=projection(stageCanvas),px=point.x*view.dpr,py=point.y*view.dpr;let hit=null,distance=Infinity;
-  project.spatialSources.forEach((source)=>{const projected=projectPoint(source.position,view),next=Math.hypot(px-projected[0],py-projected[1]);if(next<distance){hit=source;distance=next;}});
-  return distance<=24*view.dpr?hit:null;
+function pointInPolygon(point,polygon){
+  let inside=false;for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){const a=polygon[i],b=polygon[j];if((a[1]>point[1])!==(b[1]>point[1])&&point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0])inside=!inside;}return inside;
+}
+function isInsideRoom(point,z,view){
+  const polygon=[[0,0,z],[1,0,z],[1,1,z],[0,1,z]].map((position)=>projectPoint(position,view));
+  return pointInPolygon([point.x*view.dpr,point.y*view.dpr],polygon);
 }
 const stageCanvas=$("stage");
 stageCanvas.addEventListener("pointerdown",(event)=>{
   const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);stageCanvas.setPointerCapture(event.pointerId);
-  if(stagePointers.size===2&&camera.mode==="3d"){stagePinch={distance:pointerDistance(stagePointers),zoom:camera.zoom};stageGesture=null;sourceDrag=null;return;}
-  const hit=pickStageSource(point);
-  if(hit){selectedSource=hit.id;sourceDrag={pointer:event.pointerId,id:hit.id,z:hit.position[2]};stageGesture=null;renderSources();drawStage();return;}
-  stageGesture={pointer:event.pointerId,...point,az:camera.az,el:camera.el,moved:false};
+  if(sourceDrag){stagePointers.delete(event.pointerId);return;}
+  if(stagePointers.size===2&&camera.mode==="3d"){stagePinch={distance:pointerDistance(stagePointers),zoom:camera.zoom};stageGesture=null;return;}
+  const source=selected(),view=projection(stageCanvas),inside=source&&isInsideRoom(point,source.position[2],view);
+  if(!editMode&&source&&inside){const position=unprojectPoint(point.x*view.dpr,point.y*view.dpr,source.position[2],view);source.position=position;sourceDrag={pointer:event.pointerId,id:source.id,z:position[2]};stageGesture=null;send({type:"spatial.trigger",id:source.id,position});drawStage();return;}
+  if(camera.mode==="3d")stageGesture={pointer:event.pointerId,...point,az:camera.az,el:camera.el,moved:false};
 });
 stageCanvas.addEventListener("pointermove",(event)=>{
   if(!stagePointers.has(event.pointerId))return;const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);
@@ -196,14 +201,12 @@ stageCanvas.addEventListener("pointermove",(event)=>{
   if(stageGesture.moved){camera.az=stageGesture.az+dx*0.008;camera.el=Math.max(0.15,Math.min(1.48,stageGesture.el-dy*0.006));camera.preset="custom";redrawViews();}
 });
 function endStagePointer(event){
-  const point=pointerInCanvas(event,stageCanvas),tap=stageGesture?.pointer===event.pointerId&&!stageGesture.moved&&!stagePinch;
   stagePointers.delete(event.pointerId);if(stagePointers.size<2)stagePinch=null;
-  if(sourceDrag?.pointer===event.pointerId){flushSpatialMove();sourceDrag=null;}
-  if(tap&&!editMode&&selected()){const view=projection(stageCanvas),position=unprojectPoint(point.x*view.dpr,point.y*view.dpr,selected().position[2],view);selected().position=position;send({type:"spatial.trigger",id:selectedSource,position});drawStage();}
+  if(sourceDrag?.pointer===event.pointerId){flushSpatialMove();send({type:"spatial.release",id:sourceDrag.id});sourceDrag=null;}
   if(stageGesture?.pointer===event.pointerId)stageGesture=null;
 }
 stageCanvas.addEventListener("pointerup",endStagePointer);
-stageCanvas.addEventListener("pointercancel",(event)=>{stagePointers.delete(event.pointerId);stageGesture=null;stagePinch=null;sourceDrag=null;pendingSpatialMove=null;});
+stageCanvas.addEventListener("pointercancel",(event)=>{stagePointers.delete(event.pointerId);stageGesture=null;stagePinch=null;if(sourceDrag?.pointer===event.pointerId){flushSpatialMove();send({type:"spatial.release",id:sourceDrag.id});sourceDrag=null;}pendingSpatialMove=null;});
 stageCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;event.preventDefault();setZoom(camera.zoom*Math.exp(-event.deltaY*0.0015));},{passive:false});
 $("height").addEventListener("input", () => { const source=selected(); if (!source)return; source.position[2]=Number($("height").value); queueSpatialMove(source.id,source.position); updateHeight(); drawStage(); });
 $("height").addEventListener("change",flushSpatialMove);
@@ -250,7 +253,7 @@ layoutCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;eve
 function syncViewControls(){
   document.querySelectorAll("[data-view-toolbar]").forEach((toolbar)=>{toolbar.dataset.mode=camera.mode;toolbar.querySelectorAll("[data-view]").forEach((button)=>button.classList.toggle("on",button.dataset.view===camera.mode));});
   document.querySelectorAll("[data-angle]").forEach((button)=>button.classList.toggle("on",button.dataset.angle===camera.preset));
-  document.querySelector(".axis-hint").textContent=camera.mode==="3d"?"marker drag — move · empty drag — orbit · pinch — zoom":"marker drag — move · empty tap — trigger";
+  document.querySelector(".axis-hint").textContent=camera.mode==="3d"?"inside touch — gate & move · outside drag — orbit":"inside touch — gate & move · outside — ignored";
 }
 function setViewMode(mode){camera.mode=mode==="2d"?"2d":"3d";localStorage.setItem("pps-view",camera.mode);stageGesture=null;stagePinch=null;layoutOrbit=null;layoutPinch=null;redrawViews();}
 function applyAngle(name){

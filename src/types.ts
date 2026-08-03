@@ -61,6 +61,7 @@ export type ClientMessage =
   | { type: "spatial.remove"; id: string }
   | { type: "spatial.move"; id: string; position: XYZ }
   | { type: "spatial.trigger"; id: string; position: XYZ }
+  | { type: "spatial.release"; id: string }
   | { type: "control.add"; controlType: "pad" | "fader" }
   | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "x" | "y" | "w" | "h">> }
   | { type: "control.remove"; id: string }
@@ -92,7 +93,7 @@ export function defaultProject(): Project {
     spatialSources: [{ id: "S01", position: [0.5, 0.5, 0.5] }],
     controls: [
       { id: "P01", type: "pad", x: 0.03, y: 0.08, w: 0.14, h: 0.8 },
-      { id: "F01", type: "fader", x: 0.21, y: 0.08, w: 0.11, h: 0.8, value: 0.75 }
+      { id: "F01", type: "fader", x: 0.21, y: 0.08, w: 0.09, h: 0.8, value: 0.75 }
     ],
     nextIds: { speaker: 5, spatial: 2, pad: 2, fader: 2 }
   };

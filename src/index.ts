@@ -19,6 +19,11 @@ const osc = new OscOutput(project.osc);
 osc.open();
 let eventSeq = 0;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+const activeGates = new Map<string, Set<WebSocket>>();
+function releaseAllGates(): void {
+  for (const id of activeGates.keys()) osc.spatialRelease(id);
+  activeGates.clear();
+}
 
 const mime: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -71,6 +76,7 @@ function handle(message: ClientMessage, socket: WebSocket): void {
     case "state.request": send(socket, fullState()); break;
     case "project.export": send(socket, { type: "project.data", project }); break;
     case "project.import": {
+      releaseAllGates();
       project = parseProject(message.project);
       osc.reconfigure(project.osc);
       store.save(project);
@@ -104,7 +110,10 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       const source: SpatialSource = { id: nextId("spatial", "S", project.spatialSources.map((item) => item.id)), position: [0.5, 0.5, 0.5] };
       project.spatialSources.push(source); changed(); break;
     }
-    case "spatial.remove": project.spatialSources = project.spatialSources.filter((item) => item.id !== message.id); changed(); break;
+    case "spatial.remove": {
+      if (activeGates.has(message.id)) { osc.spatialRelease(message.id); activeGates.delete(message.id); }
+      project.spatialSources = project.spatialSources.filter((item) => item.id !== message.id); changed(); break;
+    }
     case "spatial.move": {
       const source = project.spatialSources.find((item) => item.id === message.id);
       if (!source) throw new Error("Unknown spatial source");
@@ -122,9 +131,16 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       source.position = position;
       const gains = dbapGains(position, project);
       const seq = ++eventSeq;
-      osc.spatial(source.id, position, gains, seq);
+      const holders = activeGates.get(source.id) ?? new Set<WebSocket>(); holders.add(socket); activeGates.set(source.id, holders);
+      osc.spatialTrigger(source.id, position, gains);
       scheduleSave();
       broadcast({ type: "spatial.fired", id: source.id, position, gains, seq });
+      break;
+    }
+    case "spatial.release": {
+      if (!project.spatialSources.some((item) => item.id === message.id)) throw new Error("Unknown spatial source");
+      const holders = activeGates.get(message.id); holders?.delete(socket);
+      if (!holders || holders.size === 0) { activeGates.delete(message.id); osc.spatialRelease(message.id); }
       break;
     }
     case "control.add": {
@@ -133,7 +149,7 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       const id = nextId(isPad ? "pad" : "fader", isPad ? "P" : "F", project.controls.map((item) => item.id));
       project.controls.push(isPad
         ? { id, type: "pad", ...placement, w: 0.14, h: 0.36 }
-        : { id, type: "fader", ...placement, w: 0.11, h: 0.78, value: 0.75 });
+        : { id, type: "fader", ...placement, w: 0.09, h: 0.78, value: 0.75 });
       changed(); break;
     }
     case "control.update": {
@@ -162,6 +178,12 @@ wss.on("connection", (socket) => {
     try { handle(JSON.parse(data.toString()) as ClientMessage, socket); }
     catch (error) { send(socket, { type: "error", operation: "message", message: error instanceof Error ? error.message : "Invalid message" }); }
   });
+  socket.on("close", () => {
+    for (const [id, holders] of activeGates) {
+      holders.delete(socket);
+      if (holders.size === 0) { activeGates.delete(id); osc.spatialRelease(id); }
+    }
+  });
 });
 
 server.listen(port, "0.0.0.0", () => {
@@ -172,6 +194,7 @@ server.listen(port, "0.0.0.0", () => {
 function shutdown(): void {
   if (saveTimer) clearTimeout(saveTimer);
   store.save(project);
+  releaseAllGates();
   osc.close();
   server.close(() => process.exit(0));
 }
