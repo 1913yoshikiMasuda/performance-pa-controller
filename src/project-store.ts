@@ -34,9 +34,10 @@ export function parseProject(value: unknown): Project {
   const controls: FreeControl[] = [];
   for (const [index, control] of (Array.isArray(raw.controls) ? raw.controls : []).slice(0, 64).entries()) {
     if (!control || (control.type !== "pad" && control.type !== "fader")) continue;
-    const maxWidth = control.type === "pad" ? 0.14 : 0.09;
+    const defaultWidth = control.type === "pad" ? 0.14 : 0.09;
+    const maxWidth = control.type === "pad" ? 0.45 : 0.3;
     const base = { id: safeId(control.id, `${control.type === "pad" ? "P" : "F"}${String(index + 1).padStart(2, "0")}`),
-      x: clamp01(control.x), y: clamp01(control.y), w: Math.max(0.08, Math.min(maxWidth, finite(control.w, maxWidth))), h: Math.max(0.18, Math.min(0.9, finite(control.h, 0.7))) };
+      x: clamp01(control.x), y: clamp01(control.y), w: Math.max(control.type === "pad" ? 0.08 : 0.065, Math.min(maxWidth, finite(control.w, defaultWidth))), h: Math.max(control.type === "pad" ? 0.16 : 0.28, Math.min(0.9, finite(control.h, 0.7))) };
     if (control.type === "pad") controls.push({ ...base, type: "pad" });
     else controls.push({ ...base, type: "fader", value: clamp01(control.value) });
   }

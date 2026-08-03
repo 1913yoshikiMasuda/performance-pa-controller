@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const performanceSurface=document.querySelector("main");
 for(const eventName of ["contextmenu","selectstart","dragstart"])performanceSurface.addEventListener(eventName,(event)=>event.preventDefault());
+let theme=localStorage.getItem("pps-theme")==="hype"?"hype":"studio";
 let project = null;
 let socket = null;
 let selectedSource = null;
@@ -8,6 +9,7 @@ let editMode = false;
 let fired = null;
 let toastTimer = null;
 let controlDrag = null;
+let controlResize = null;
 let faderTouch = null;
 const padTouches = new Map();
 let speakerDrag = null;
@@ -52,6 +54,7 @@ function connect() {
 function setStatus(ok) { $("status").classList.toggle("ok", ok); $("status").querySelector("span").textContent = ok ? "OSC socket ready" : "Reconnecting"; }
 function selected() { return project?.spatialSources.find((source) => source.id === selectedSource); }
 function clamp01(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
+function cssColor(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim();}
 
 function render() {
   if (!project) return;
@@ -94,6 +97,7 @@ function renderControls() {
       element.append(label,rail,output,input); element.addEventListener("pointerdown", (event) => { if (editMode) beginControlDrag(event, control, element); else beginFaderTouch(event,control,element,input,output); });
     }
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
+    const resize=document.createElement("button");resize.className="resize-handle";resize.setAttribute("aria-label",`Resize ${control.id}`);resize.addEventListener("pointerdown",(event)=>beginControlResize(event,control,element));element.append(resize);
     return element;
   }));
 }
@@ -104,9 +108,13 @@ function endPadTouch(event){
 }
 
 function beginControlDrag(event, control, element) {
-  if (event.target.classList.contains("remove")) return;
+  if (event.target.classList.contains("remove")||event.target.classList.contains("resize-handle")) return;
   const rect = $("control-board").getBoundingClientRect(); controlDrag = { id:control.id, pointer:event.pointerId, element, rect, dx:event.clientX-element.getBoundingClientRect().left, dy:event.clientY-element.getBoundingClientRect().top };
   element.setPointerCapture(event.pointerId); event.preventDefault();
+}
+function beginControlResize(event,control,element){
+  if(!editMode)return;event.stopPropagation();event.preventDefault();const boardRect=$("control-board").getBoundingClientRect();
+  controlResize={pointer:event.pointerId,control,element,boardRect,startX:event.clientX,startY:event.clientY,startW:control.w,startH:control.h};event.currentTarget.setPointerCapture(event.pointerId);
 }
 function beginFaderTouch(event,control,element,input,output){
   faderTouch={pointer:event.pointerId,control,element,input,output};element.setPointerCapture(event.pointerId);event.preventDefault();updateFaderTouch(event);
@@ -117,6 +125,7 @@ function updateFaderTouch(event){
 }
 $("control-board").addEventListener("pointermove", (event) => {
   if(faderTouch){updateFaderTouch(event);return;}
+  if(controlResize?.pointer===event.pointerId){const state=controlResize,minW=state.control.type==="fader"?.065:.08,maxW=state.control.type==="fader"?.3:.45,minH=state.control.type==="fader"?.28:.16;state.control.w=Math.max(minW,Math.min(maxW,1-state.control.x,state.startW+(event.clientX-state.startX)/state.boardRect.width));state.control.h=Math.max(minH,Math.min(.9,1-state.control.y,state.startH+(event.clientY-state.startY)/state.boardRect.height));state.element.style.width=`${state.control.w*100}%`;state.element.style.height=`${state.control.h*100}%`;return;}
   if (!controlDrag || event.pointerId !== controlDrag.pointer) return;
   const control = project.controls.find((item) => item.id === controlDrag.id); if (!control) return;
   control.x = clamp01((event.clientX-controlDrag.rect.left-controlDrag.dx)/controlDrag.rect.width);
@@ -126,11 +135,12 @@ $("control-board").addEventListener("pointermove", (event) => {
 });
 $("control-board").addEventListener("pointerup", (event) => {
   if(faderTouch?.pointer===event.pointerId){updateFaderTouch(event);faderTouch=null;return;}
+  if(controlResize?.pointer===event.pointerId){send({type:"control.update",id:controlResize.control.id,patch:{w:controlResize.control.w,h:controlResize.control.h}});controlResize=null;return;}
   if (!controlDrag || event.pointerId !== controlDrag.pointer) return;
   const control = project.controls.find((item) => item.id === controlDrag.id);
   if (control) send({ type:"control.update", id:control.id, patch:{ x:control.x, y:control.y } }); controlDrag = null;
 });
-$("control-board").addEventListener("pointercancel", () => { controlDrag = null; faderTouch = null; });
+$("control-board").addEventListener("pointercancel", () => { controlDrag = null; controlResize = null; faderTouch = null; });
 
 const HEIGHT_VIS = 0.7;
 function projection(canvas) {
@@ -161,20 +171,21 @@ function unprojectPoint(x, y, z, view) {
 function line(ctx,a,b,color,width=1) { ctx.beginPath();ctx.moveTo(...a);ctx.lineTo(...b);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke(); }
 function drawRoom(ctx, view) {
   const floor=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]], roof=floor.map(([x,y])=>[x,y,1]);
-  for(let i=0;i<4;i++) line(ctx,projectPoint(floor[i],view),projectPoint(floor[(i+1)%4],view),"#314353",1.2*view.dpr);
-  for(let i=1;i<4;i++){const t=i/4;line(ctx,projectPoint([t,0,0],view),projectPoint([t,1,0],view),"#182735");line(ctx,projectPoint([0,t,0],view),projectPoint([1,t,0],view),"#182735");}
-  if(view.mode==="3d") for(let i=0;i<4;i++){line(ctx,projectPoint(roof[i],view),projectPoint(roof[(i+1)%4],view),"#233140");line(ctx,projectPoint(floor[i],view),projectPoint(roof[i],view),"#233140");}
+  const grid=cssColor("--grid"),soft=cssColor("--grid-soft");
+  for(let i=0;i<4;i++) line(ctx,projectPoint(floor[i],view),projectPoint(floor[(i+1)%4],view),grid,1.2*view.dpr);
+  for(let i=1;i<4;i++){const t=i/4;line(ctx,projectPoint([t,0,0],view),projectPoint([t,1,0],view),soft);line(ctx,projectPoint([0,t,0],view),projectPoint([1,t,0],view),soft);}
+  if(view.mode==="3d") for(let i=0;i<4;i++){line(ctx,projectPoint(roof[i],view),projectPoint(roof[(i+1)%4],view),soft);line(ctx,projectPoint(floor[i],view),projectPoint(roof[i],view),soft);}
 }
 function drawStage() {
-  if (!project) return; const canvas=$("stage"), view=projection(canvas), ctx=canvas.getContext("2d"); ctx.clearRect(0,0,view.width,view.height); drawRoom(ctx,view);
-  project.speakers.forEach((speaker) => { const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view); ctx.beginPath();ctx.arc(...p,5*view.dpr,0,Math.PI*2);ctx.fillStyle="#778899";ctx.fill();ctx.fillStyle="#8393a5";ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(speaker.id,p[0]+7*view.dpr,p[1]); });
+  if (!project) return; const canvas=$("stage"), view=projection(canvas), ctx=canvas.getContext("2d"),spatial=cssColor("--spatial"),spatialDim=cssColor("--spatial-dim"),speakerColor=cssColor("--speaker"); ctx.clearRect(0,0,view.width,view.height); drawRoom(ctx,view);
+  project.speakers.forEach((speaker) => { const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view); ctx.beginPath();ctx.arc(...p,5*view.dpr,0,Math.PI*2);ctx.fillStyle=speakerColor;ctx.fill();ctx.fillStyle=speakerColor;ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(speaker.id,p[0]+7*view.dpr,p[1]); });
   project.spatialSources.forEach((source) => {
     const p=projectPoint(source.position,view),floor=projectPoint([source.position[0],source.position[1],0],view),active=source.id===selectedSource;
-    if(view.mode==="3d")line(ctx,floor,p,active?"#62b9ff":"#36546a",1.5*view.dpr);
-    ctx.beginPath();ctx.arc(...p,(active?8:5)*view.dpr,0,Math.PI*2);ctx.fillStyle=active?"#62b9ff":"#3a607a";ctx.fill();
-    if(view.mode==="2d"){ctx.fillStyle=active?"#b9e1ff":"#63839a";ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(`${source.id} · Z ${(source.position[2]*project.room.height_m).toFixed(1)}m`,p[0]+9*view.dpr,p[1]-7*view.dpr);}
+    if(view.mode==="3d")line(ctx,floor,p,active?spatial:spatialDim,1.5*view.dpr);
+    ctx.beginPath();ctx.arc(...p,(active?8:5)*view.dpr,0,Math.PI*2);ctx.fillStyle=active?spatial:spatialDim;ctx.fill();
+    if(view.mode==="2d"){ctx.fillStyle=active?spatial:spatialDim;ctx.font=`${9*view.dpr}px system-ui`;ctx.fillText(`${source.id} · Z ${(source.position[2]*project.room.height_m).toFixed(1)}m`,p[0]+9*view.dpr,p[1]-7*view.dpr);}
   });
-  if (fired && performance.now()-fired.at<550) { const p=projectPoint(fired.position,view),r=(performance.now()-fired.at)/550*45*view.dpr;ctx.beginPath();ctx.arc(...p,r,0,Math.PI*2);ctx.strokeStyle=`rgba(98,185,255,${1-r/(45*view.dpr)})`;ctx.lineWidth=2*view.dpr;ctx.stroke();requestAnimationFrame(drawStage); }
+  if (fired && performance.now()-fired.at<550) { const p=projectPoint(fired.position,view),r=(performance.now()-fired.at)/550*45*view.dpr;ctx.save();ctx.globalAlpha=1-r/(45*view.dpr);ctx.beginPath();ctx.arc(...p,r,0,Math.PI*2);ctx.strokeStyle=spatial;ctx.lineWidth=2*view.dpr;ctx.stroke();ctx.restore();requestAnimationFrame(drawStage); }
 }
 function pointerInCanvas(event,canvas){const rect=canvas.getBoundingClientRect();return {x:event.clientX-rect.left,y:event.clientY-rect.top};}
 function pointerDistance(points){const values=[...points.values()];return values.length<2?1:Math.hypot(values[0].x-values[1].x,values[0].y-values[1].y);}
@@ -236,8 +247,8 @@ function renderSettings() {
   }));
 }
 function drawLayout() {
-  if (!project || $("settings").hidden) return; const canvas=$("layout-stage"),view=projection(canvas),ctx=canvas.getContext("2d");ctx.clearRect(0,0,view.width,view.height);drawRoom(ctx,view);
-  project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view);ctx.beginPath();ctx.arc(...p,9*view.dpr,0,Math.PI*2);ctx.fillStyle=speakerDrag?.id===speaker.id?"#fff":"#62b9ff";ctx.fill();ctx.fillStyle="#dbeeff";ctx.font=`${10*view.dpr}px system-ui`;ctx.fillText(`${speaker.id} · ${speaker.z_m.toFixed(1)}m`,p[0]+12*view.dpr,p[1]);});
+  if (!project || $("settings").hidden) return; const canvas=$("layout-stage"),view=projection(canvas),ctx=canvas.getContext("2d"),spatial=cssColor("--spatial"),text=cssColor("--text");ctx.clearRect(0,0,view.width,view.height);drawRoom(ctx,view);
+  project.speakers.forEach((speaker)=>{const p=projectPoint([speaker.x_m/project.room.width_m,speaker.y_m/project.room.depth_m,speaker.z_m/project.room.height_m],view);ctx.beginPath();ctx.arc(...p,9*view.dpr,0,Math.PI*2);ctx.fillStyle=speakerDrag?.id===speaker.id?text:spatial;ctx.fill();ctx.fillStyle=text;ctx.font=`${10*view.dpr}px system-ui`;ctx.fillText(`${speaker.id} · ${speaker.z_m.toFixed(1)}m`,p[0]+12*view.dpr,p[1]);});
 }
 const layoutCanvas=$("layout-stage");
 layoutCanvas.addEventListener("pointerdown",(event)=>{
@@ -284,6 +295,9 @@ const savedView=localStorage.getItem("pps-view");if(savedView==="2d"||savedView=
 
 function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value)}}}); }
 ["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur"].forEach((id)=>$(id).addEventListener("change",patchProject));
+function applyTheme(next){theme=next==="hype"?"hype":"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").textContent=`THEME · ${theme.toUpperCase()}`;requestAnimationFrame(redrawViews);}
+$("theme").addEventListener("click",()=>applyTheme(theme==="studio"?"hype":"studio"));
+applyTheme(theme);
 $("mode").addEventListener("click",()=>{editMode=!editMode;render();});
 $("settings-open").addEventListener("click",()=>{if(!editMode){toast("Switch to EDIT to change setup");return;}$("settings").hidden=false;renderSettings();requestAnimationFrame(drawLayout);});
 $("settings-close").addEventListener("click",()=>{$("settings").hidden=true;});
