@@ -105,6 +105,16 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       project.spatialSources.push(source); changed(); break;
     }
     case "spatial.remove": project.spatialSources = project.spatialSources.filter((item) => item.id !== message.id); changed(); break;
+    case "spatial.move": {
+      const source = project.spatialSources.find((item) => item.id === message.id);
+      if (!source) throw new Error("Unknown spatial source");
+      const position = message.position.map(clamp01) as XYZ;
+      source.position = position;
+      osc.spatialMove(source.id, position, dbapGains(position, project));
+      scheduleSave();
+      broadcast({ type: "spatial.moved", id: source.id, position });
+      break;
+    }
     case "spatial.trigger": {
       const source = project.spatialSources.find((item) => item.id === message.id);
       if (!source) throw new Error("Unknown spatial source");
@@ -122,8 +132,8 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       const isPad = message.controlType === "pad";
       const id = nextId(isPad ? "pad" : "fader", isPad ? "P" : "F", project.controls.map((item) => item.id));
       project.controls.push(isPad
-        ? { id, type: "pad", ...placement, w: 0.16, h: 0.36 }
-        : { id, type: "fader", ...placement, w: 0.13, h: 0.78, value: 0.75 });
+        ? { id, type: "pad", ...placement, w: 0.14, h: 0.36 }
+        : { id, type: "fader", ...placement, w: 0.11, h: 0.78, value: 0.75 });
       changed(); break;
     }
     case "control.update": {

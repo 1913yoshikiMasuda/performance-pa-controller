@@ -59,6 +59,7 @@ export type ClientMessage =
   | { type: "speaker.remove"; id: string }
   | { type: "spatial.add" }
   | { type: "spatial.remove"; id: string }
+  | { type: "spatial.move"; id: string; position: XYZ }
   | { type: "spatial.trigger"; id: string; position: XYZ }
   | { type: "control.add"; controlType: "pad" | "fader" }
   | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "x" | "y" | "w" | "h">> }
@@ -70,6 +71,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: "state.full"; project: Project; oscReady: boolean }
   | { type: "state.project"; project: Project }
+  | { type: "spatial.moved"; id: string; position: XYZ }
   | { type: "spatial.fired"; id: string; position: XYZ; gains: number[]; seq: number }
   | { type: "project.data"; project: Project }
   | { type: "error"; operation: string; message: string };
@@ -89,8 +91,8 @@ export function defaultProject(): Project {
     ],
     spatialSources: [{ id: "S01", position: [0.5, 0.5, 0.5] }],
     controls: [
-      { id: "P01", type: "pad", x: 0.03, y: 0.08, w: 0.18, h: 0.8 },
-      { id: "F01", type: "fader", x: 0.25, y: 0.08, w: 0.13, h: 0.8, value: 0.75 }
+      { id: "P01", type: "pad", x: 0.03, y: 0.08, w: 0.14, h: 0.8 },
+      { id: "F01", type: "fader", x: 0.21, y: 0.08, w: 0.11, h: 0.8, value: 0.75 }
     ],
     nextIds: { speaker: 5, spatial: 2, pad: 2, fader: 2 }
   };

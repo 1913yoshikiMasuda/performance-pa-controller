@@ -62,6 +62,13 @@ export class OscOutput {
     ]));
   }
 
+  spatialMove(id: string, position: XYZ, gains: number[]): void {
+    this.send(encodeBundle([
+      this.message(`spatial/${id}/position`, position.map((value) => ({ type: "f", value })) as OscArg[]),
+      this.message(`spatial/${id}/gains`, gains.map((value) => ({ type: "f", value })))
+    ]));
+  }
+
   pad(id: string, seq: number): void {
     this.send(encodeMessage(this.message(`pad/${id}/trigger`, [{ type: "i", value: seq }])));
   }

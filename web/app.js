@@ -6,12 +6,16 @@ let editMode = false;
 let fired = null;
 let toastTimer = null;
 let controlDrag = null;
+let faderTouch = null;
 let speakerDrag = null;
 const camera = { mode:"3d", az:0, el:0.95, zoom:1, preset:"iso" };
 const stagePointers = new Map();
 const layoutPointers = new Map();
 let stageGesture = null;
 let stagePinch = null;
+let sourceDrag = null;
+let pendingSpatialMove = null;
+let spatialMoveFrame = 0;
 let layoutOrbit = null;
 let layoutPinch = null;
 
@@ -29,6 +33,10 @@ function connect() {
       if (message.type === "state.full") setStatus(message.oscReady);
       if (!project.spatialSources.some((source) => source.id === selectedSource)) selectedSource = project.spatialSources[0]?.id ?? null;
       render();
+    } else if (message.type === "spatial.moved") {
+      const source = project.spatialSources.find((item) => item.id === message.id);
+      if (source) source.position = message.position;
+      drawStage();
     } else if (message.type === "spatial.fired") {
       const source = project.spatialSources.find((item) => item.id === message.id);
       if (source) source.position = message.position;
@@ -73,7 +81,7 @@ function renderControls() {
       const input = document.createElement("input"); input.type = "range"; input.min = "0"; input.max = "1"; input.step = "0.001"; input.value = control.value;
       const output = document.createElement("output"); output.textContent = `${Math.round(control.value*100)}%`;
       input.addEventListener("input", () => { output.textContent = `${Math.round(input.value*100)}%`; send({ type:"control.value", id:control.id, value:Number(input.value) }); });
-      element.append(label,input,output); element.addEventListener("pointerdown", (event) => { if (editMode) beginControlDrag(event, control, element); });
+      element.append(label,input,output); element.addEventListener("pointerdown", (event) => { if (editMode) beginControlDrag(event, control, element); else beginFaderTouch(event,control,element,input,output); });
     }
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
     return element;
@@ -85,7 +93,15 @@ function beginControlDrag(event, control, element) {
   const rect = $("control-board").getBoundingClientRect(); controlDrag = { id:control.id, pointer:event.pointerId, element, rect, dx:event.clientX-element.getBoundingClientRect().left, dy:event.clientY-element.getBoundingClientRect().top };
   element.setPointerCapture(event.pointerId); event.preventDefault();
 }
+function beginFaderTouch(event,control,element,input,output){
+  faderTouch={pointer:event.pointerId,control,element,input,output};element.setPointerCapture(event.pointerId);event.preventDefault();updateFaderTouch(event);
+}
+function updateFaderTouch(event){
+  if(!faderTouch||event.pointerId!==faderTouch.pointer)return;const rect=faderTouch.element.getBoundingClientRect(),top=rect.top+22,bottom=rect.bottom-20;
+  const value=clamp01(1-(event.clientY-top)/Math.max(1,bottom-top));faderTouch.control.value=value;faderTouch.input.value=value;faderTouch.output.textContent=`${Math.round(value*100)}%`;send({type:"control.value",id:faderTouch.control.id,value});
+}
 $("control-board").addEventListener("pointermove", (event) => {
+  if(faderTouch){updateFaderTouch(event);return;}
   if (!controlDrag || event.pointerId !== controlDrag.pointer) return;
   const control = project.controls.find((item) => item.id === controlDrag.id); if (!control) return;
   control.x = clamp01((event.clientX-controlDrag.rect.left-controlDrag.dx)/controlDrag.rect.width);
@@ -94,11 +110,12 @@ $("control-board").addEventListener("pointermove", (event) => {
   controlDrag.element.style.left = `${control.x*100}%`; controlDrag.element.style.top = `${control.y*100}%`;
 });
 $("control-board").addEventListener("pointerup", (event) => {
+  if(faderTouch?.pointer===event.pointerId){updateFaderTouch(event);faderTouch=null;return;}
   if (!controlDrag || event.pointerId !== controlDrag.pointer) return;
   const control = project.controls.find((item) => item.id === controlDrag.id);
   if (control) send({ type:"control.update", id:control.id, patch:{ x:control.x, y:control.y } }); controlDrag = null;
 });
-$("control-board").addEventListener("pointercancel", () => { controlDrag = null; });
+$("control-board").addEventListener("pointercancel", () => { controlDrag = null; faderTouch = null; });
 
 const HEIGHT_VIS = 0.7;
 function projection(canvas) {
@@ -149,15 +166,31 @@ function pointerDistance(points){const values=[...points.values()];return values
 function redrawViews(){drawStage();drawLayout();syncViewControls();}
 function setZoom(value){camera.zoom=Math.max(0.5,Math.min(3,Number(value)||1));redrawViews();}
 function resetCamera(){camera.az=0;camera.el=0.95;camera.zoom=1;camera.preset="iso";redrawViews();}
+function queueSpatialMove(id,position){
+  pendingSpatialMove={id,position:[...position]};
+  if(!spatialMoveFrame)spatialMoveFrame=requestAnimationFrame(()=>{spatialMoveFrame=0;if(pendingSpatialMove){send({type:"spatial.move",...pendingSpatialMove});pendingSpatialMove=null;}});
+}
+function flushSpatialMove(){
+  if(spatialMoveFrame){cancelAnimationFrame(spatialMoveFrame);spatialMoveFrame=0;}
+  if(pendingSpatialMove){send({type:"spatial.move",...pendingSpatialMove});pendingSpatialMove=null;}
+}
+function pickStageSource(point){
+  if(!project)return null;const view=projection(stageCanvas),px=point.x*view.dpr,py=point.y*view.dpr;let hit=null,distance=Infinity;
+  project.spatialSources.forEach((source)=>{const projected=projectPoint(source.position,view),next=Math.hypot(px-projected[0],py-projected[1]);if(next<distance){hit=source;distance=next;}});
+  return distance<=24*view.dpr?hit:null;
+}
 const stageCanvas=$("stage");
 stageCanvas.addEventListener("pointerdown",(event)=>{
   const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);stageCanvas.setPointerCapture(event.pointerId);
-  if(stagePointers.size===2&&camera.mode==="3d"){stagePinch={distance:pointerDistance(stagePointers),zoom:camera.zoom};stageGesture=null;return;}
+  if(stagePointers.size===2&&camera.mode==="3d"){stagePinch={distance:pointerDistance(stagePointers),zoom:camera.zoom};stageGesture=null;sourceDrag=null;return;}
+  const hit=pickStageSource(point);
+  if(hit){selectedSource=hit.id;sourceDrag={pointer:event.pointerId,id:hit.id,z:hit.position[2]};stageGesture=null;renderSources();drawStage();return;}
   stageGesture={pointer:event.pointerId,...point,az:camera.az,el:camera.el,moved:false};
 });
 stageCanvas.addEventListener("pointermove",(event)=>{
   if(!stagePointers.has(event.pointerId))return;const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);
   if(stagePinch&&stagePointers.size>=2){setZoom(stagePinch.zoom*pointerDistance(stagePointers)/stagePinch.distance);return;}
+  if(sourceDrag?.pointer===event.pointerId){const source=project.spatialSources.find((item)=>item.id===sourceDrag.id),view=projection(stageCanvas);if(!source)return;source.position=unprojectPoint(point.x*view.dpr,point.y*view.dpr,sourceDrag.z,view);queueSpatialMove(source.id,source.position);drawStage();return;}
   if(!stageGesture||stageGesture.pointer!==event.pointerId||camera.mode!=="3d")return;
   const dx=point.x-stageGesture.x,dy=point.y-stageGesture.y;if(Math.hypot(dx,dy)>6)stageGesture.moved=true;
   if(stageGesture.moved){camera.az=stageGesture.az+dx*0.008;camera.el=Math.max(0.15,Math.min(1.48,stageGesture.el-dy*0.006));camera.preset="custom";redrawViews();}
@@ -165,13 +198,15 @@ stageCanvas.addEventListener("pointermove",(event)=>{
 function endStagePointer(event){
   const point=pointerInCanvas(event,stageCanvas),tap=stageGesture?.pointer===event.pointerId&&!stageGesture.moved&&!stagePinch;
   stagePointers.delete(event.pointerId);if(stagePointers.size<2)stagePinch=null;
+  if(sourceDrag?.pointer===event.pointerId){flushSpatialMove();sourceDrag=null;}
   if(tap&&!editMode&&selected()){const view=projection(stageCanvas),position=unprojectPoint(point.x*view.dpr,point.y*view.dpr,selected().position[2],view);selected().position=position;send({type:"spatial.trigger",id:selectedSource,position});drawStage();}
   if(stageGesture?.pointer===event.pointerId)stageGesture=null;
 }
 stageCanvas.addEventListener("pointerup",endStagePointer);
-stageCanvas.addEventListener("pointercancel",(event)=>{stagePointers.delete(event.pointerId);stageGesture=null;stagePinch=null;});
+stageCanvas.addEventListener("pointercancel",(event)=>{stagePointers.delete(event.pointerId);stageGesture=null;stagePinch=null;sourceDrag=null;pendingSpatialMove=null;});
 stageCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;event.preventDefault();setZoom(camera.zoom*Math.exp(-event.deltaY*0.0015));},{passive:false});
-$("height").addEventListener("input", () => { const source=selected(); if (!source)return; source.position[2]=Number($("height").value); updateHeight(); drawStage(); });
+$("height").addEventListener("input", () => { const source=selected(); if (!source)return; source.position[2]=Number($("height").value); queueSpatialMove(source.id,source.position); updateHeight(); drawStage(); });
+$("height").addEventListener("change",flushSpatialMove);
 function updateHeight() { const source=selected(); const value=source?.position[2] ?? 0; $("height-value").textContent=project?`${(value*project.room.height_m).toFixed(1)}m`:"0m"; }
 
 function renderSettings() {
@@ -215,7 +250,7 @@ layoutCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;eve
 function syncViewControls(){
   document.querySelectorAll("[data-view-toolbar]").forEach((toolbar)=>{toolbar.dataset.mode=camera.mode;toolbar.querySelectorAll("[data-view]").forEach((button)=>button.classList.toggle("on",button.dataset.view===camera.mode));});
   document.querySelectorAll("[data-angle]").forEach((button)=>button.classList.toggle("on",button.dataset.angle===camera.preset));
-  document.querySelector(".axis-hint").textContent=camera.mode==="3d"?"tap — trigger · drag — orbit · pinch — zoom":"tap — trigger · Z — height";
+  document.querySelector(".axis-hint").textContent=camera.mode==="3d"?"marker drag — move · empty drag — orbit · pinch — zoom":"marker drag — move · empty tap — trigger";
 }
 function setViewMode(mode){camera.mode=mode==="2d"?"2d":"3d";localStorage.setItem("pps-view",camera.mode);stageGesture=null;stagePinch=null;layoutOrbit=null;layoutPinch=null;redrawViews();}
 function applyAngle(name){

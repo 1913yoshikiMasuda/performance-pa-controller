@@ -24,6 +24,17 @@ Maxが独自に空間化する場合は`position`を利用し、`gains`を無視
 
 `eventSeq`はNode起動中に単調増加します。Projectの永続IDではなく、重複イベント検出用です。
 
+## Spatial Move
+
+Sourceマーカーのドラッグ中、またはZフェーダーの操作中は、描画フレーム単位に間引いて次のBundleを送ります。
+
+```text
+/pps/spatial/S01/position  <x:float> <y:float> <z:float>
+/pps/spatial/S01/gains     <SP01:float> <SP02:float> ...
+```
+
+このBundleに`trigger`は含まれません。Max側では、既に鳴っている音源の空間ゲイン更新として扱えます。
+
 ## General Pad
 
 ```text
