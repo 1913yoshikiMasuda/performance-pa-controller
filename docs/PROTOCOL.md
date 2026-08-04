@@ -62,9 +62,9 @@ Relative LinkまたはScene Morphで複数Sourceが同時に動く場合もア�
 /pps/pad/P01/trigger 0
 ```
 
-Padもmomentary gateです。押した瞬間に`1`、指を離すかpointerがキャンセルされたときに`0`を送ります。ブラウザ接続が切れた場合もNodeが保持中のPadへ`0`を送ります。発音内容はMax側で決定します。
+Padはtouch-up-insideで確定するtriggerです。枠内で指を離した時だけ`1`と`0`を順番に送り、触れたまま枠外へ指を逃がして離した場合やpointerがキャンセルされた場合は何も送りません。発音内容はMax側で決定します。
 
-EDITから追加できるSwitch型Padも同じ`/pad/<ID>/trigger`を使います。Switchはタップごとに`1`と`0`を切り替え、ブラウザが切断してもNodeが動作している間は状態を維持します。複数ブラウザ間ではON/OFF状態が同期されます。Switchの削除、Project import、Node終了時には、ONだったSwitchへ`0`を送ってから状態を破棄します。Node再起動後の初期状態はOFFです。
+EDITから追加できるSwitch型Padも同じ`/pad/<ID>/trigger`を使います。Switchは枠内で指を離した操作ごとに`1`と`0`を切り替え、枠外で離した操作はキャンセルします。ブラウザが切断してもNodeが動作している間は状態を維持します。複数ブラウザ間ではON/OFF状態が同期されます。Switchの削除、Project import、Node終了時には、ONだったSwitchへ`0`を送ってから状態を破棄します。Node再起動後の初期状態はOFFです。
 
 ## General Fader
 

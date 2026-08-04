@@ -86,7 +86,7 @@ function showSpatialOsc(id=selectedSource){
 }
 function showControlOsc(control){
   if(!control)return;inspectedControl=control.id;
-  const value=control.type==="pad"?(control.mode==="toggle"?(toggleStates[control.id]||0):([...padTouches.values()].some((touch)=>touch.id===control.id)?1:0)):control.value;
+  const value=control.type==="pad"?(control.mode==="toggle"?(toggleStates[control.id]||0):0):control.value;
   $("general-osc-hint").textContent=`${oscPath(`${control.type}/${control.id}/${control.type==="pad"?"trigger":"value"}`)}  ${formatOscNumber(value)}`;
 }
 function updateOscReadouts(){if(!project)return;$("osc-target").textContent=`${project.osc.host}${project.osc.namespace}`;$("osc-port").textContent=`UDP ${project.osc.port}`;$("osc-destination").title=`OSC ${project.osc.host}:${project.osc.port}${project.osc.namespace}`;showSpatialOsc();const control=project.controls.find((item)=>item.id===inspectedControl);if(control)showControlOsc(control);else{$("general-osc-hint").textContent="Tap a control to inspect OSC";inspectedControl=null;}}
@@ -184,11 +184,11 @@ function renderControls() {
       element.append(title);if(isSwitch){const state=document.createElement("i");state.className="switch-state";state.textContent=switchOn?"ON":"OFF";element.append(state);}
       element.addEventListener("pointerdown", (event) => {
         if(editMode){showControlOsc(control);beginControlDrag(event,control,element);return;}
-        if(isSwitch){showControlOsc(control);send({type:"control.toggle",id:control.id});event.preventDefault();return;}
-        if(![...padTouches.values()].some((touch)=>touch.id===control.id))send({type:"control.trigger",id:control.id,gate:1});
-        padTouches.set(event.pointerId,{id:control.id,element});showControlOsc(control);element.classList.add("held");element.setPointerCapture(event.pointerId);event.preventDefault();
+        padTouches.set(event.pointerId,{id:control.id,element,inside:true,isSwitch});showControlOsc(control);element.classList.add("held");element.setPointerCapture(event.pointerId);event.preventDefault();
       });
-      if(!isSwitch){element.addEventListener("pointerup",endPadTouch);element.addEventListener("pointercancel",endPadTouch);}
+      element.addEventListener("pointermove",updatePadTouch);
+      element.addEventListener("pointerup",endPadTouch);
+      element.addEventListener("pointercancel",endPadTouch);
     } else {
       const input = document.createElement("input"); input.type = "range"; input.min = "0"; input.max = "1"; input.step = "0.001"; input.value = control.value;
       const output = document.createElement("output"); output.textContent = `${Math.round(control.value*100)}%`;
@@ -222,9 +222,14 @@ function updateControlLabel(value){
   send({type:"control.update",id,patch:{label},requestId});closeControlMetadata();
 }
 
+function pointerInsideElement(event,element){const rect=element.getBoundingClientRect();return event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;}
+function updatePadHeld(id,element){element.classList.toggle("held",[...padTouches.values()].some((touch)=>touch.id===id&&touch.inside));}
+function updatePadTouch(event){
+  const touch=padTouches.get(event.pointerId);if(!touch)return;touch.inside=pointerInsideElement(event,touch.element);updatePadHeld(touch.id,touch.element);event.preventDefault();
+}
 function endPadTouch(event){
-  const touch=padTouches.get(event.pointerId);if(!touch)return;padTouches.delete(event.pointerId);
-  if(![...padTouches.values()].some((item)=>item.id===touch.id)){touch.element.classList.remove("held");send({type:"control.trigger",id:touch.id,gate:0});}
+  const touch=padTouches.get(event.pointerId);if(!touch)return;const fire=event.type!=="pointercancel"&&pointerInsideElement(event,touch.element);padTouches.delete(event.pointerId);updatePadHeld(touch.id,touch.element);
+  if(fire){touch.element.classList.add("fired");setTimeout(()=>touch.element.classList.remove("fired"),100);if(touch.isSwitch)send({type:"control.toggle",id:touch.id});else{send({type:"control.trigger",id:touch.id,gate:1});send({type:"control.trigger",id:touch.id,gate:0});}}
   const control=project.controls.find((item)=>item.id===touch.id);if(control&&inspectedControl===touch.id)showControlOsc(control);
 }
 
