@@ -8,9 +8,21 @@
 - Y: `0.0` = room front、`1.0` = room back
 - Z: `0.0` = floor、`1.0` = ceiling
 
+## Speaker Configuration
+
+Speakerは最大64台です。Node起動時、Project import時、Speakerの追加・変更・削除時に、次のimmediate OSC Bundleを送ります。Spatial Trigger Bundleにも同じ3 messageを先頭へ含めるため、MaxをNodeより後に起動した場合も最初の発音時に同期できます。
+
+```text
+/pps/speakers/count    <count:int>
+/pps/speakers/outputs  <SP01-out:int> <SP02-out:int> ...
+/pps/speakers/ids      <SP01-id:string> <SP02-id:string> ...
+```
+
+`outputs`と`ids`の並び順はProjectのspeaker配列順で、`gains`と一対一に対応します。`out_ch`はMaxの論理出力チャンネル`1–1024`です。64ch固定のMCパッチでは、受信したgainリストを必ず64要素まで`0`で埋めてください。短いリストをそのまま既存のMC値へ適用すると、削除されたSpeakerの古いgainが残る可能性があります。
+
 ## Spatial Trigger
 
-Stageの室内面に指が触れた瞬間、次の3 messageを同じimmediate OSC Bundleとして送ります。
+Stageの室内面に指が触れた瞬間、Speaker Configurationの3 messageと次の3 messageを同じimmediate OSC Bundleとして送ります。
 
 ```text
 /pps/spatial/S01/position  <x:float> <y:float> <z:float>
@@ -41,6 +53,8 @@ Stageを押したままのドラッグ中、またはZフェーダーの操作�
 
 このBundleに`trigger`は含まれません。Max側では、既に鳴っている音源の空間ゲイン更新として扱えます。
 
+Relative LinkまたはScene Morphで複数Sourceが同時に動く場合もアドレス形式は変わりません。対象Sourceごとの`position`と`gains`を、描画フレームごとに1つのimmediate OSC Bundleへまとめて送ります。Relative Linkの押下時はSpeaker Configurationを先頭に1回だけ含め、その後に各Sourceの`position`、`gains`、`trigger 1`が続きます。解放時の`trigger 0`も対象Source分を1つのBundleへまとめます。
+
 ## General Pad
 
 ```text
@@ -49,6 +63,8 @@ Stageを押したままのドラッグ中、またはZフェーダーの操作�
 ```
 
 Padもmomentary gateです。押した瞬間に`1`、指を離すかpointerがキャンセルされたときに`0`を送ります。ブラウザ接続が切れた場合もNodeが保持中のPadへ`0`を送ります。発音内容はMax側で決定します。
+
+EDITから追加できるSwitch型Padも同じ`/pad/<ID>/trigger`を使います。Switchはタップごとに`1`と`0`を切り替え、ブラウザが切断してもNodeが動作している間は状態を維持します。複数ブラウザ間ではON/OFF状態が同期されます。Switchの削除、Project import、Node終了時には、ONだったSwitchへ`0`を送ってから状態を破棄します。Node再起動後の初期状態はOFFです。
 
 ## General Fader
 

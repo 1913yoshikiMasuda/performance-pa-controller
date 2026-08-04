@@ -20,6 +20,7 @@ export function rangeTaper(distance: number, maxDistance?: number): number {
 
 export function dbapGains(position: XYZ, project: Project): number[] {
   const [x, y, z] = normToMeters(position.map(clamp01) as XYZ, project.room);
+  const hardCenter = project.dbap.hardCenter_m;
   const alpha = project.dbap.rolloff_db / (20 * Math.log10(2));
   const blur2 = project.dbap.blur_m ** 2;
   const maxDistance = project.dbap.maxDist_m;
@@ -39,5 +40,21 @@ export function dbapGains(position: XYZ, project: Project): number[] {
     sumSquares = 1;
   }
   const norm = Math.sqrt(sumSquares) || 1;
-  return weights.map((gain) => gain / norm);
+  const gains = weights.map((gain) => gain / norm);
+  if (hardCenter <= 0 || !project.speakers.length) return gains;
+
+  const nearest = project.speakers.reduce((best, speaker, index, speakers) => {
+    const distance = Math.hypot(x - speaker.x_m, y - speaker.y_m);
+    const bestDistance = Math.hypot(x - speakers[best].x_m, y - speakers[best].y_m);
+    return distance < bestDistance ? index : best;
+  }, 0);
+  const nearestDistance = Math.hypot(x - project.speakers[nearest].x_m, y - project.speakers[nearest].y_m);
+  if (nearestDistance >= hardCenter * 2) return gains;
+  if (nearestDistance <= hardCenter) return project.speakers.map((_, index) => index === nearest ? 1 : 0);
+
+  const proximity = (hardCenter * 2 - nearestDistance) / hardCenter;
+  const centerMix = proximity * proximity * (3 - 2 * proximity);
+  const blended = gains.map((gain, index) => gain * (1 - centerMix) + (index === nearest ? centerMix : 0));
+  const blendNorm = Math.sqrt(blended.reduce((sum, gain) => sum + gain * gain, 0)) || 1;
+  return blended.map((gain) => gain / blendNorm);
 }

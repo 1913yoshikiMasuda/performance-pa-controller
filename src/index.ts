@@ -6,7 +6,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { clamp01, dbapGains } from "./dbap.js";
 import { OscOutput } from "./osc.js";
 import { parseProject, ProjectStore } from "./project-store.js";
-import type { ClientMessage, FreeControl, Project, ServerMessage, Speaker, SpatialSource, XYZ } from "./types.js";
+import { MAX_OUTPUT_CHANNEL, MAX_SPEAKERS, type ClientMessage, type FreeControl, type Project, type ServerMessage, type Speaker, type SpatialSource, type XYZ } from "./types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -17,15 +17,19 @@ const store = new ProjectStore(projectFile);
 let project = store.load();
 const osc = new OscOutput(project.osc);
 osc.open();
+osc.speakerConfig(project.speakers);
 let eventSeq = 0;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 const activeGates = new Map<string, Set<WebSocket>>();
 const activePadGates = new Map<string, Set<WebSocket>>();
+const toggleStates = new Map<string, 0 | 1>();
 function releaseAllGates(): void {
   for (const id of activeGates.keys()) osc.spatialRelease(id);
   for (const id of activePadGates.keys()) osc.pad(id, 0);
+  for (const [id, gate] of toggleStates) if(gate)osc.pad(id,0);
   activeGates.clear();
   activePadGates.clear();
+  toggleStates.clear();
 }
 
 const mime: Record<string, string> = {
@@ -51,7 +55,8 @@ const wss = new WebSocketServer({ server, maxPayload: 1_000_000 });
 const send = (socket: WebSocket, message: ServerMessage) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(message));
 const broadcast = (message: ServerMessage) => wss.clients.forEach((socket) => send(socket, message));
 const gainsBySource = (): Record<string, number[]> => Object.fromEntries(project.spatialSources.map((source) => [source.id, dbapGains(source.position, project)]));
-const fullState = (): ServerMessage => ({ type: "state.full", project, oscReady: osc.isReady(), gainsBySource: gainsBySource() });
+const currentToggleStates = (): Record<string, 0 | 1> => Object.fromEntries(toggleStates);
+const fullState = (): ServerMessage => ({ type: "state.full", project, oscReady: osc.isReady(), gainsBySource: gainsBySource(), toggleStates:currentToggleStates() });
 
 function scheduleSave(): void {
   if (saveTimer) clearTimeout(saveTimer);
@@ -61,7 +66,23 @@ function scheduleSave(): void {
 
 function changed(): void {
   scheduleSave();
-  broadcast({ type: "state.project", project, gainsBySource: gainsBySource() });
+  broadcast({ type: "state.project", project, gainsBySource: gainsBySource(), toggleStates:currentToggleStates() });
+}
+
+function applySpatialUpdates(updates: { id: string; position: XYZ }[]): { id: string; position: XYZ; gains: number[] }[] {
+  if (updates.length === 0 || updates.length > 64) throw new Error("Invalid spatial batch");
+  const seen = new Set<string>();
+  const resolved = updates.map((update) => {
+    if (seen.has(update.id)) throw new Error("Duplicate spatial source");
+    seen.add(update.id);
+    const source = project.spatialSources.find((item) => item.id === update.id);
+    if (!source) throw new Error("Unknown spatial source");
+    return { source, position:update.position.map(clamp01) as XYZ };
+  });
+  return resolved.map(({ source, position }) => {
+    source.position = position;
+    return { id:source.id, position, gains:dbapGains(position, project) };
+  });
 }
 
 function nextId(kind: keyof Project["nextIds"], prefix: string, existing: string[]): string {
@@ -79,10 +100,14 @@ function handle(message: ClientMessage, socket: WebSocket): void {
   switch (message.type) {
     case "state.request": send(socket, fullState()); break;
     case "project.export": send(socket, { type: "project.data", project }); break;
+    case "project.resetIds": {
+      project.nextIds={speaker:1,spatial:1,pad:1,fader:1};changed();break;
+    }
     case "project.import": {
       releaseAllGates();
       project = parseProject(message.project);
       osc.reconfigure(project.osc);
+      osc.speakerConfig(project.speakers);
       store.save(project);
       broadcast(fullState());
       break;
@@ -94,29 +119,42 @@ function handle(message: ClientMessage, socket: WebSocket): void {
         osc: { ...project.osc, ...patch.osc }, room: { ...project.room, ...patch.room }, dbap: { ...project.dbap, ...patch.dbap }
       });
       osc.reconfigure(project.osc);
+      osc.speakerConfig(project.speakers);
       changed();
       break;
     }
     case "speaker.add": {
+      if (project.speakers.length >= MAX_SPEAKERS) throw new Error(`Speaker limit is ${MAX_SPEAKERS}`);
+      const usedOutputs = new Set(project.speakers.map((item) => item.out_ch));
+      let outChannel = 1; while (usedOutputs.has(outChannel) && outChannel < MAX_OUTPUT_CHANNEL) outChannel++;
       const speaker: Speaker = { id: nextId("speaker", "SP", project.speakers.map((item) => item.id)),
         x_m: project.room.width_m / 2, y_m: project.room.depth_m / 2, z_m: project.room.height_m / 2,
-        out_ch: Math.max(0, ...project.speakers.map((item) => item.out_ch)) + 1 };
-      project.speakers.push(speaker); changed(); break;
+        out_ch: outChannel };
+      project.speakers.push(speaker); osc.speakerConfig(project.speakers); changed(); break;
     }
     case "speaker.update": {
       const speaker = project.speakers.find((item) => item.id === message.id);
       if (!speaker) throw new Error("Unknown speaker");
       Object.assign(speaker, message.patch);
-      project = parseProject(project); changed(); break;
+      project = parseProject(project); osc.speakerConfig(project.speakers); changed(); break;
     }
-    case "speaker.remove": project.speakers = project.speakers.filter((item) => item.id !== message.id); changed(); break;
+    case "speaker.remove": project.speakers = project.speakers.filter((item) => item.id !== message.id); osc.speakerConfig(project.speakers); changed(); break;
     case "spatial.add": {
       const source: SpatialSource = { id: nextId("spatial", "S", project.spatialSources.map((item) => item.id)), position: [0.5, 0.5, 0.5] };
       project.spatialSources.push(source); changed(); break;
     }
     case "spatial.remove": {
       if (activeGates.has(message.id)) { osc.spatialRelease(message.id); activeGates.delete(message.id); }
-      project.spatialSources = project.spatialSources.filter((item) => item.id !== message.id); changed(); break;
+      project.spatialSources = project.spatialSources.filter((item) => item.id !== message.id);
+      for(const scene of Object.values(project.scenes))if(scene)delete scene.positions[message.id];
+      changed(); break;
+    }
+    case "scene.store": {
+      project.scenes[message.slot] = { positions:Object.fromEntries(project.spatialSources.map(({ id, position }) => [id, [...position] as XYZ])) };
+      changed(); break;
+    }
+    case "scene.clear": {
+      delete project.scenes[message.slot];changed();break;
     }
     case "spatial.move": {
       const source = project.spatialSources.find((item) => item.id === message.id);
@@ -137,7 +175,7 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       const gains = dbapGains(position, project);
       const seq = ++eventSeq;
       const holders = activeGates.get(source.id) ?? new Set<WebSocket>(); holders.add(socket); activeGates.set(source.id, holders);
-      osc.spatialTrigger(source.id, position, gains);
+      osc.spatialTrigger(source.id, position, gains, project.speakers);
       scheduleSave();
       broadcast({ type: "spatial.fired", id: source.id, position, gains, seq });
       break;
@@ -148,12 +186,34 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       if (!holders || holders.size === 0) { activeGates.delete(message.id); osc.spatialRelease(message.id); }
       break;
     }
+    case "spatial.batchMove": {
+      const frames = applySpatialUpdates(message.updates);
+      osc.spatialBatchMove(frames);scheduleSave();
+      for (const frame of frames) broadcast({ type:"spatial.moved", ...frame });
+      break;
+    }
+    case "spatial.batchTrigger": {
+      const frames = applySpatialUpdates(message.updates);
+      for (const frame of frames) {
+        const holders=activeGates.get(frame.id)??new Set<WebSocket>();holders.add(socket);activeGates.set(frame.id,holders);
+      }
+      osc.spatialBatchTrigger(frames,project.speakers);scheduleSave();
+      for (const frame of frames) broadcast({ type:"spatial.fired", ...frame, seq:++eventSeq });
+      break;
+    }
+    case "spatial.batchRelease": {
+      const ids=[...new Set(message.ids)];if(ids.length===0||ids.length>64)throw new Error("Invalid spatial batch");
+      const releases:string[]=[];
+      for(const id of ids){if(!project.spatialSources.some((item)=>item.id===id))throw new Error("Unknown spatial source");const holders=activeGates.get(id);holders?.delete(socket);if(!holders||holders.size===0){activeGates.delete(id);releases.push(id);}}
+      if(releases.length)osc.spatialBatchRelease(releases);
+      break;
+    }
     case "control.add": {
       const placement = controlPlacement(project.controls.length);
-      const isPad = message.controlType === "pad";
+      const isPad = message.controlType !== "fader",isSwitch=message.controlType==="switch";
       const id = nextId(isPad ? "pad" : "fader", isPad ? "P" : "F", project.controls.map((item) => item.id));
       project.controls.push(isPad
-        ? { id, type: "pad", ...placement, w: 0.14, h: 0.36 }
+        ? { id, type: "pad", ...(isSwitch?{mode:"toggle" as const}:{}), ...placement, w: 0.14, h: 0.36 }
         : { id, type: "fader", ...placement, w: 0.09, h: 0.78, value: 0.75 });
       changed(); break;
     }
@@ -161,19 +221,26 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       const control = project.controls.find((item) => item.id === message.id);
       if (!control) throw new Error("Unknown control");
       Object.assign(control, message.patch);
-      project = parseProject(project); changed(); break;
+      project = parseProject(project);changed();
+      if(message.requestId)send(socket,{type:"control.updated",id:control.id,requestId:String(message.requestId).slice(0,80)});
+      break;
     }
     case "control.remove": {
       if (activePadGates.has(message.id)) { osc.pad(message.id, 0); activePadGates.delete(message.id); }
+      if(toggleStates.get(message.id)){osc.pad(message.id,0);toggleStates.delete(message.id);}
       project.controls = project.controls.filter((item) => item.id !== message.id); changed(); break;
     }
     case "control.trigger": {
       const control = project.controls.find((item) => item.id === message.id);
-      if (!control || control.type !== "pad") throw new Error("Unknown pad");
+      if (!control || control.type !== "pad"||control.mode==="toggle") throw new Error("Unknown momentary pad");
       const holders = activePadGates.get(control.id) ?? new Set<WebSocket>();
       if (message.gate === 1) { holders.add(socket); activePadGates.set(control.id, holders); osc.pad(control.id, 1); }
       else { holders.delete(socket); if (holders.size === 0) { activePadGates.delete(control.id); osc.pad(control.id, 0); } }
       break;
+    }
+    case "control.toggle": {
+      const control=project.controls.find((item)=>item.id===message.id);if(!control||control.type!=="pad"||control.mode!=="toggle")throw new Error("Unknown switch");
+      const gate:0|1=toggleStates.get(control.id)?0:1;if(gate)toggleStates.set(control.id,gate);else toggleStates.delete(control.id);osc.pad(control.id,gate);broadcast({type:"control.toggled",id:control.id,gate});break;
     }
     case "control.value": {
       const control = project.controls.find((item) => item.id === message.id);
@@ -206,12 +273,20 @@ server.listen(port, "0.0.0.0", () => {
   console.log(`[osc] ${project.osc.host}:${project.osc.port}${project.osc.namespace}`);
 });
 
+let shuttingDown = false;
 function shutdown(): void {
+  if (shuttingDown) {
+    process.exit(1);
+  }
+  shuttingDown = true;
   if (saveTimer) clearTimeout(saveTimer);
   store.save(project);
   releaseAllGates();
   osc.close();
+  for (const socket of wss.clients) socket.terminate();
+  wss.close();
   server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1000).unref();
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
