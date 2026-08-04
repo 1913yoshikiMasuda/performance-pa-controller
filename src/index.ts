@@ -4,9 +4,11 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { clamp01, dbapGains } from "./dbap.js";
+import { findControlPlacement } from "./control-placement.js";
+import { lowestAvailableId } from "./id.js";
 import { OscOutput } from "./osc.js";
 import { parseProject, ProjectStore } from "./project-store.js";
-import { MAX_OUTPUT_CHANNEL, MAX_SPEAKERS, type ClientMessage, type FreeControl, type Project, type ServerMessage, type Speaker, type SpatialSource, type XYZ } from "./types.js";
+import { MAX_GENERAL_PAGES, MAX_OUTPUT_CHANNEL, MAX_SPEAKERS, type ClientMessage, type Project, type ServerMessage, type Speaker, type SpatialSource, type XYZ } from "./types.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
@@ -34,7 +36,7 @@ function releaseAllGates(): void {
 
 const mime: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml"
+  ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml"
 };
 
 const server = createServer((request, response) => {
@@ -86,23 +88,15 @@ function applySpatialUpdates(updates: { id: string; position: XYZ }[]): { id: st
 }
 
 function nextId(kind: keyof Project["nextIds"], prefix: string, existing: string[]): string {
-  for (;;) {
-    const id = `${prefix}${String(project.nextIds[kind]++).padStart(2, "0")}`;
-    if (!existing.includes(id)) return id;
-  }
-}
-
-function controlPlacement(index: number): Pick<FreeControl, "x" | "y"> {
-  return { x: 0.03 + (index % 5) * 0.19, y: 0.08 + (Math.floor(index / 5) % 2) * 0.43 };
+  const available = lowestAvailableId(prefix, existing);
+  project.nextIds[kind] = available.number + 1;
+  return available.id;
 }
 
 function handle(message: ClientMessage, socket: WebSocket): void {
   switch (message.type) {
     case "state.request": send(socket, fullState()); break;
     case "project.export": send(socket, { type: "project.data", project }); break;
-    case "project.resetIds": {
-      project.nextIds={speaker:1,spatial:1,pad:1,fader:1};changed();break;
-    }
     case "project.import": {
       releaseAllGates();
       project = parseProject(message.project);
@@ -122,6 +116,22 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       osc.speakerConfig(project.speakers);
       changed();
       break;
+    }
+    case "generalPage.add": {
+      if (project.generalPages.length >= MAX_GENERAL_PAGES) throw new Error(`General page limit is ${MAX_GENERAL_PAGES}`);
+      const id = lowestAvailableId("G", project.generalPages.map((page) => page.id)).id;
+      const page = { id, name:`PAGE ${project.generalPages.length + 1}` };
+      project.generalPages.push(page);changed();send(socket,{type:"generalPage.added",page});break;
+    }
+    case "generalPage.rename": {
+      const page=project.generalPages.find((item)=>item.id===message.id);if(!page)throw new Error("Unknown general page");
+      page.name=message.name;project=parseProject(project);changed();break;
+    }
+    case "generalPage.remove": {
+      if(project.generalPages.length<=1)throw new Error("At least one general page is required");
+      if(!project.generalPages.some((page)=>page.id===message.id))throw new Error("Unknown general page");
+      if(project.controls.some((control)=>control.pageId===message.id))throw new Error("Delete the controls on this page first");
+      project.generalPages=project.generalPages.filter((page)=>page.id!==message.id);changed();break;
     }
     case "speaker.add": {
       if (project.speakers.length >= MAX_SPEAKERS) throw new Error(`Speaker limit is ${MAX_SPEAKERS}`);
@@ -209,12 +219,15 @@ function handle(message: ClientMessage, socket: WebSocket): void {
       break;
     }
     case "control.add": {
-      const placement = controlPlacement(project.controls.length);
+      const page=project.generalPages.find((item)=>item.id===message.pageId);if(!page)throw new Error("Unknown general page");
       const isPad = message.controlType !== "fader",isSwitch=message.controlType==="switch";
+      const size=message.controlType==="fader"?{w:.09,h:.78}:isSwitch?{w:.08,h:.72}:{w:.08,h:.42};
+      const pageControls=project.controls.filter((control)=>control.pageId===page.id);
+      const placement=findControlPlacement(pageControls,size.w,size.h);if(!placement)throw new Error("No free space for another control on this page");
       const id = nextId(isPad ? "pad" : "fader", isPad ? "P" : "F", project.controls.map((item) => item.id));
       project.controls.push(isPad
-        ? { id, type: "pad", ...(isSwitch?{mode:"toggle" as const}:{}), ...placement, w: 0.14, h: 0.36 }
-        : { id, type: "fader", ...placement, w: 0.09, h: 0.78, value: 0.75 });
+        ? { id, pageId:page.id, type: "pad", ...(isSwitch?{mode:"toggle" as const}:{}), ...placement, ...size }
+        : { id, pageId:page.id, type: "fader", ...placement, ...size, value: 0.75 });
       changed(); break;
     }
     case "control.update": {

@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, copyFileSync, readdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { FreeControl, Project, SceneSlot, SceneSnapshot, Speaker, SpatialSource, XYZ } from "./types.js";
+import type { FreeControl, GeneralPage, Project, SceneSlot, SceneSnapshot, Speaker, SpatialSource, XYZ } from "./types.js";
 import { clamp01 } from "./dbap.js";
-import { defaultProject, MAX_OUTPUT_CHANNEL, MAX_SPEAKERS } from "./types.js";
+import { lowestAvailableId } from "./id.js";
+import { defaultProject, MAX_GENERAL_PAGES, MAX_OUTPUT_CHANNEL, MAX_SPEAKERS } from "./types.js";
 
 const finite = (value: unknown, fallback: number): number => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const safeId = (value: unknown, fallback: string): string => {
@@ -10,6 +11,7 @@ const safeId = (value: unknown, fallback: string): string => {
   return /^[A-Za-z0-9_-]{1,32}$/.test(id) ? id : fallback;
 };
 const safeLabel = (value: unknown): string => [...String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim()].slice(0, 40).join("");
+const safePageName = (value: unknown, fallback: string): string => [...safeLabel(value)].slice(0, 24).join("") || fallback;
 
 export function parseProject(value: unknown): Project {
   if (!value || typeof value !== "object") throw new Error("Project must be an object");
@@ -44,13 +46,25 @@ export function parseProject(value: unknown): Project {
     }
     if (Object.keys(parsedPositions).length > 0) scenes[slot] = { positions: parsedPositions };
   }
+  const generalPages: GeneralPage[] = [];
+  for (const [index, page] of (Array.isArray(raw.generalPages) ? raw.generalPages : []).slice(0, MAX_GENERAL_PAGES).entries()) {
+    if (!page || typeof page !== "object") continue;
+    const requestedId = safeId(page.id, `G${String(index + 1).padStart(2, "0")}`);
+    const id = generalPages.some((item) => item.id === requestedId)
+      ? lowestAvailableId("G", generalPages.map((item) => item.id)).id
+      : requestedId;
+    generalPages.push({ id, name: safePageName(page.name, `PAGE ${index + 1}`) });
+  }
+  if (generalPages.length === 0) generalPages.push({ id: "G01", name: "MAIN" });
+  const pageIds = new Set(generalPages.map((page) => page.id));
+  const fallbackPageId = generalPages[0].id;
   const controls: FreeControl[] = [];
   for (const [index, control] of (Array.isArray(raw.controls) ? raw.controls : []).slice(0, 64).entries()) {
     if (!control || (control.type !== "pad" && control.type !== "fader")) continue;
     const defaultWidth = control.type === "pad" ? 0.14 : 0.09;
     const maxWidth = control.type === "pad" ? 0.45 : 0.3;
     const label=safeLabel(control.label);
-    const base = { id: safeId(control.id, `${control.type === "pad" ? "P" : "F"}${String(index + 1).padStart(2, "0")}`), ...(label?{label}:{}),
+    const base = { id: safeId(control.id, `${control.type === "pad" ? "P" : "F"}${String(index + 1).padStart(2, "0")}`), pageId:pageIds.has(control.pageId) ? control.pageId : fallbackPageId, ...(label?{label}:{}),
       x: clamp01(control.x), y: clamp01(control.y), w: Math.max(control.type === "pad" ? 0.08 : 0.065, Math.min(maxWidth, finite(control.w, defaultWidth))), h: Math.max(control.type === "pad" ? 0.16 : 0.28, Math.min(0.9, finite(control.h, 0.7))) };
     if (control.type === "pad") controls.push({ ...base, type: "pad", ...(control.mode==="toggle"?{mode:"toggle" as const}:{}) });
     else controls.push({ ...base, type: "fader", value: clamp01(control.value) });
@@ -71,6 +85,7 @@ export function parseProject(value: unknown): Project {
     speakers,
     spatialSources,
     scenes,
+    generalPages,
     controls,
     nextIds: {
       speaker: Math.max(1, Math.floor(finite(raw.nextIds?.speaker, speakers.length + 1))),

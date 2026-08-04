@@ -1,0 +1,11 @@
+{
+  "id": "/",
+  "name": "Performance PA Controller",
+  "short_name": "Performance PA",
+  "description": "3D spatial and general OSC controller for performance PA",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0d12",
+  "theme_color": "#0a0d12"
+}

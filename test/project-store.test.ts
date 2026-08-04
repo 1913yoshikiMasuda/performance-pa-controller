@@ -29,6 +29,19 @@ describe("project parsing", () => {
     const parsed=parseProject(project);
     expect(parsed.controls[0]).toMatchObject({id:"P01",label:"メイン ボーカル 🎤"});
   });
+  it("preserves General pages and Unicode page names", () => {
+    const project=defaultProject();project.generalPages.push({id:"G02",name:"  効果音 🎛️  "});project.controls[0].pageId="G02";
+    const parsed=parseProject(project);
+    expect(parsed.generalPages[1]).toEqual({id:"G02",name:"効果音 🎛️"});
+    expect(parsed.controls[0].pageId).toBe("G02");
+  });
+  it("migrates legacy controls to a default General page", () => {
+    const legacy=defaultProject() as unknown as {generalPages?:unknown;controls:Array<{pageId?:string}>};
+    delete legacy.generalPages;for(const control of legacy.controls)delete control.pageId;
+    const parsed=parseProject(legacy);
+    expect(parsed.generalPages).toEqual([{id:"G01",name:"MAIN"}]);
+    expect(parsed.controls.every((control)=>control.pageId==="G01")).toBe(true);
+  });
   it("preserves toggle behavior on switch-style pads", () => {
     const project=defaultProject(),pad=project.controls[0];if(pad.type!=="pad")throw new Error("Expected pad");pad.mode="toggle";
     expect(parseProject(project).controls[0]).toMatchObject({id:"P01",type:"pad",mode:"toggle"});

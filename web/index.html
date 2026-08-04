@@ -2,9 +2,13 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
   <meta name="theme-color" content="#0a0d12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Performance PA">
   <title>Performance PA Controller</title>
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -60,6 +64,8 @@
 
       <section class="general-shell">
         <div class="general-head"><span>GENERAL CONTROLS</span><small>Independent from spatial routing</small>
+          <div id="general-tabs" role="tablist" aria-label="General control pages"></div>
+          <div class="general-page-actions"><button id="general-page-add" title="Add page">＋</button><button id="general-page-rename" title="Rename page">✎</button><button id="general-page-remove" title="Delete empty page">×</button></div>
           <code id="general-osc-hint" class="general-osc-readout">Tap a control to inspect OSC</code>
           <div class="edit-actions"><button id="pad-add">＋ PAD</button><button id="switch-add">＋ SWITCH</button><button id="fader-add">＋ FADER</button></div>
         </div>
@@ -108,7 +114,6 @@
       <div class="sheet-footer">
         <button id="project-import">IMPORT JSON</button>
         <button id="project-export">EXPORT JSON</button>
-        <button id="project-reset-ids" class="danger-action">RESET ID COUNTERS</button>
         <span>Changes save automatically</span>
       </div>
     </div>
