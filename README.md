@@ -254,5 +254,3 @@ IDは追加のたびに実際の空きを確認します。たとえば`P01, P02
 ## License
 
 MIT
-
-OSS公開準備については[`docs/OPEN_SOURCE_RELEASE_CHECKLIST.md`](docs/OPEN_SOURCE_RELEASE_CHECKLIST.md)を参照してください。
