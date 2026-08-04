@@ -1,8 +1,18 @@
 import { createSocket, type Socket } from "node:dgram";
-import type { Project, XYZ } from "./types.js";
+import type { Project, Speaker, XYZ } from "./types.js";
 
 type OscArg = { type: "f" | "i" | "s"; value: number | string };
-interface OscMessage { address: string; args: OscArg[] }
+export interface OscMessage { address: string; args: OscArg[] }
+export interface SpatialOscFrame { id: string; position: XYZ; gains: number[] }
+
+export function speakerConfigMessages(namespace: string, speakers: Speaker[]): OscMessage[] {
+  const base = namespace.replace(/\/$/, "");
+  return [
+    { address: `${base}/speakers/count`, args: [{ type: "i", value: speakers.length }] },
+    { address: `${base}/speakers/outputs`, args: speakers.map(({ out_ch }) => ({ type: "i", value: out_ch })) },
+    { address: `${base}/speakers/ids`, args: speakers.map(({ id }) => ({ type: "s", value: id })) }
+  ];
+}
 
 function paddedString(value: string): Buffer {
   const source = Buffer.from(`${value}\0`, "utf8");
@@ -35,6 +45,7 @@ export class OscOutput {
   private port?: Socket;
   private ready = false;
   private config: Project["osc"];
+  private pendingSpeakers?: Speaker[];
 
   constructor(config: Project["osc"]) { this.config = { ...config }; }
   isReady(): boolean { return this.ready; }
@@ -42,7 +53,7 @@ export class OscOutput {
   open(): void {
     this.close();
     this.port = createSocket("udp4");
-    this.port.on("listening", () => { this.ready = true; });
+    this.port.on("listening", () => { this.ready = true; if (this.pendingSpeakers) this.speakerConfig(this.pendingSpeakers); });
     this.port.on("error", (error: Error) => console.error("[osc]", error.message));
     this.port.bind(0, "0.0.0.0");
   }
@@ -54,11 +65,24 @@ export class OscOutput {
   private message(address: string, args: OscArg[]): OscMessage { return { address: this.address(address), args }; }
   private send(packet: Buffer): void { if (this.ready && this.port) this.port.send(packet, this.config.port, this.config.host); }
 
-  spatialTrigger(id: string, position: XYZ, gains: number[]): void {
+  speakerConfig(speakers: Speaker[]): void {
+    this.pendingSpeakers = speakers.map((speaker) => ({ ...speaker }));
+    this.send(encodeBundle(speakerConfigMessages(this.config.namespace, speakers)));
+  }
+
+  spatialTrigger(id: string, position: XYZ, gains: number[], speakers: Speaker[]): void {
+    this.spatialBatchTrigger([{ id, position, gains }], speakers);
+  }
+
+  spatialBatchTrigger(frames: SpatialOscFrame[], speakers: Speaker[]): void {
+    this.pendingSpeakers = speakers.map((speaker) => ({ ...speaker }));
     this.send(encodeBundle([
-      this.message(`spatial/${id}/position`, position.map((value) => ({ type: "f", value })) as OscArg[]),
-      this.message(`spatial/${id}/gains`, gains.map((value) => ({ type: "f", value }))),
-      this.message(`spatial/${id}/trigger`, [{ type: "i", value: 1 }])
+      ...speakerConfigMessages(this.config.namespace, speakers),
+      ...frames.flatMap(({ id, position, gains }) => [
+        this.message(`spatial/${id}/position`, position.map((value) => ({ type: "f", value })) as OscArg[]),
+        this.message(`spatial/${id}/gains`, gains.map((value) => ({ type: "f", value }))),
+        this.message(`spatial/${id}/trigger`, [{ type: "i", value: 1 }])
+      ])
     ]));
   }
 
@@ -66,11 +90,20 @@ export class OscOutput {
     this.send(encodeMessage(this.message(`spatial/${id}/trigger`, [{ type: "i", value: 0 }])));
   }
 
+  spatialBatchRelease(ids: string[]): void {
+    if (ids.length === 1) { this.spatialRelease(ids[0]); return; }
+    this.send(encodeBundle(ids.map((id) => this.message(`spatial/${id}/trigger`, [{ type: "i", value: 0 }]))));
+  }
+
   spatialMove(id: string, position: XYZ, gains: number[]): void {
-    this.send(encodeBundle([
+    this.spatialBatchMove([{ id, position, gains }]);
+  }
+
+  spatialBatchMove(frames: SpatialOscFrame[]): void {
+    this.send(encodeBundle(frames.flatMap(({ id, position, gains }) => [
       this.message(`spatial/${id}/position`, position.map((value) => ({ type: "f", value })) as OscArg[]),
       this.message(`spatial/${id}/gains`, gains.map((value) => ({ type: "f", value })))
-    ]));
+    ])));
   }
 
   pad(id: string, gate: 0 | 1): void {

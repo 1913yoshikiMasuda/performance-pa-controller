@@ -1,14 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, copyFileSync, readdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { FreeControl, Project, Speaker, SpatialSource } from "./types.js";
+import type { FreeControl, Project, SceneSlot, SceneSnapshot, Speaker, SpatialSource, XYZ } from "./types.js";
 import { clamp01 } from "./dbap.js";
-import { defaultProject } from "./types.js";
+import { defaultProject, MAX_OUTPUT_CHANNEL, MAX_SPEAKERS } from "./types.js";
 
 const finite = (value: unknown, fallback: number): number => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const safeId = (value: unknown, fallback: string): string => {
   const id = String(value ?? "").trim();
   return /^[A-Za-z0-9_-]{1,32}$/.test(id) ? id : fallback;
 };
+const safeLabel = (value: unknown): string => [...String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim()].slice(0, 40).join("");
 
 export function parseProject(value: unknown): Project {
   if (!value || typeof value !== "object") throw new Error("Project must be an object");
@@ -20,25 +21,38 @@ export function parseProject(value: unknown): Project {
     depth_m: Math.max(0.1, finite(raw.room?.depth_m, fallback.room.depth_m)),
     height_m: Math.max(0.1, finite(raw.room?.height_m, fallback.room.height_m))
   };
-  const speakers: Speaker[] = (Array.isArray(raw.speakers) ? raw.speakers : []).slice(0, 64).map((speaker, index) => ({
+  const speakers: Speaker[] = (Array.isArray(raw.speakers) ? raw.speakers : []).slice(0, MAX_SPEAKERS).map((speaker, index) => ({
     id: safeId(speaker?.id, `SP${String(index + 1).padStart(2, "0")}`),
     x_m: Math.max(0, Math.min(room.width_m, finite(speaker?.x_m, 0))),
     y_m: Math.max(0, Math.min(room.depth_m, finite(speaker?.y_m, 0))),
     z_m: Math.max(0, Math.min(room.height_m, finite(speaker?.z_m, 0))),
-    out_ch: Math.max(1, Math.floor(finite(speaker?.out_ch, index + 1)))
+    out_ch: Math.max(1, Math.min(MAX_OUTPUT_CHANNEL, Math.floor(finite(speaker?.out_ch, index + 1))))
   }));
   const spatialSources: SpatialSource[] = (Array.isArray(raw.spatialSources) ? raw.spatialSources : []).slice(0, 64).map((source, index) => ({
     id: safeId(source?.id, `S${String(index + 1).padStart(2, "0")}`),
     position: [clamp01(source?.position?.[0]), clamp01(source?.position?.[1]), clamp01(source?.position?.[2])]
   }));
+  const sourceIds = new Set(spatialSources.map(({ id }) => id));
+  const scenes: Partial<Record<SceneSlot, SceneSnapshot>> = {};
+  for (const slot of ["A", "B"] as const) {
+    const positions = raw.scenes?.[slot]?.positions;
+    if (!positions || typeof positions !== "object") continue;
+    const parsedPositions: Record<string, XYZ> = {};
+    for (const [id, position] of Object.entries(positions)) {
+      if (!sourceIds.has(id) || !Array.isArray(position)) continue;
+      parsedPositions[id] = [clamp01(position[0]), clamp01(position[1]), clamp01(position[2])];
+    }
+    if (Object.keys(parsedPositions).length > 0) scenes[slot] = { positions: parsedPositions };
+  }
   const controls: FreeControl[] = [];
   for (const [index, control] of (Array.isArray(raw.controls) ? raw.controls : []).slice(0, 64).entries()) {
     if (!control || (control.type !== "pad" && control.type !== "fader")) continue;
     const defaultWidth = control.type === "pad" ? 0.14 : 0.09;
     const maxWidth = control.type === "pad" ? 0.45 : 0.3;
-    const base = { id: safeId(control.id, `${control.type === "pad" ? "P" : "F"}${String(index + 1).padStart(2, "0")}`),
+    const label=safeLabel(control.label);
+    const base = { id: safeId(control.id, `${control.type === "pad" ? "P" : "F"}${String(index + 1).padStart(2, "0")}`), ...(label?{label}:{}),
       x: clamp01(control.x), y: clamp01(control.y), w: Math.max(control.type === "pad" ? 0.08 : 0.065, Math.min(maxWidth, finite(control.w, defaultWidth))), h: Math.max(control.type === "pad" ? 0.16 : 0.28, Math.min(0.9, finite(control.h, 0.7))) };
-    if (control.type === "pad") controls.push({ ...base, type: "pad" });
+    if (control.type === "pad") controls.push({ ...base, type: "pad", ...(control.mode==="toggle"?{mode:"toggle" as const}:{}) });
     else controls.push({ ...base, type: "fader", value: clamp01(control.value) });
   }
   const namespace = String(raw.osc?.namespace ?? fallback.osc.namespace).replace(/[^A-Za-z0-9/_-]/g, "");
@@ -51,10 +65,12 @@ export function parseProject(value: unknown): Project {
     dbap: {
       rolloff_db: Math.max(0.1, finite(raw.dbap?.rolloff_db, fallback.dbap.rolloff_db)),
       blur_m: Math.max(0.01, finite(raw.dbap?.blur_m, fallback.dbap.blur_m)),
+      hardCenter_m: Math.max(0, finite(raw.dbap?.hardCenter_m, fallback.dbap.hardCenter_m)),
       ...(finite(raw.dbap?.maxDist_m, 0) > 0 ? { maxDist_m: finite(raw.dbap?.maxDist_m, 0) } : {})
     },
     speakers,
     spatialSources,
+    scenes,
     controls,
     nextIds: {
       speaker: Math.max(1, Math.floor(finite(raw.nextIds?.speaker, speakers.length + 1))),

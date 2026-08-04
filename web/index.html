@@ -12,8 +12,21 @@
     <header>
       <div class="brand"><b>Performance PA</b><span>3D OSC Controller</span></div>
       <div id="project-name" class="project-name">—</div>
+      <div class="project-actions" aria-label="Project file">
+        <button id="project-load" title="Import Project JSON">IMPORT</button>
+        <button id="project-save" title="Export Project JSON">EXPORT</button>
+      </div>
       <div id="status" class="status"><i></i><span>Connecting</span></div>
-      <button id="theme" class="quiet theme-button">THEME · STUDIO</button>
+      <div id="osc-destination" class="osc-destination" title="OSC destination"><span id="osc-target">—</span><b id="osc-port">UDP —</b></div>
+      <select id="theme" class="quiet theme-select" aria-label="Theme">
+        <option value="studio">THEME · STUDIO</option>
+        <option value="hype">THEME · HYPE</option>
+        <option value="light">THEME · LIGHT</option>
+        <option value="ocean">THEME · OCEAN</option>
+        <option value="power">THEME · POWER</option>
+        <option value="liminal">THEME · LIMINAL</option>
+        <option value="gorgeous">THEME · GORGEOUS</option>
+      </select>
       <button id="settings-open" class="quiet">SETUP</button>
       <button id="mode" class="mode">LIVE</button>
     </header>
@@ -21,7 +34,7 @@
     <main>
       <section class="spatial-shell">
         <aside class="source-rail">
-          <div class="section-title"><span>SPATIAL</span><button id="spatial-add" title="Add source">＋</button></div>
+          <div class="section-title"><span>SPATIAL</span><button id="link-mode" title="Select sources to move together">LINK</button><button id="spatial-add" title="Add source">＋</button></div>
           <div id="sources"></div>
         </aside>
         <div class="stage-wrap">
@@ -30,6 +43,12 @@
             <div class="view-mode"><button data-view="2d">2D</button><button data-view="3d" class="on">3D</button></div>
             <div class="angles"><button data-angle="iso">ISO</button><button data-angle="front">FRONT</button><button data-angle="side">SIDE</button><button data-angle="top">TOP</button><button data-angle="reset" title="Reset view">↺</button></div>
           </div>
+          <div class="scene-morph" aria-label="Scene morph">
+            <button id="scene-a" title="Store current source positions in Scene A">SET A</button>
+            <label><span>MORPH</span><input id="scene-morph" type="range" min="0" max="1" step="0.001" value="0" disabled><output id="scene-morph-value">0%</output></label>
+            <button id="scene-b" title="Store current source positions in Scene B">SET B</button>
+          </div>
+          <div class="osc-readout spatial-osc-readout"><small>OSC OUT</small><code id="spatial-osc-hint">—</code></div>
           <div class="axis-hint">X / Y — tap stage · Z — height</div>
         </div>
         <aside class="height-control">
@@ -41,7 +60,8 @@
 
       <section class="general-shell">
         <div class="general-head"><span>GENERAL CONTROLS</span><small>Independent from spatial routing</small>
-          <div class="edit-actions"><button id="pad-add">＋ PAD</button><button id="fader-add">＋ FADER</button></div>
+          <code id="general-osc-hint" class="general-osc-readout">Tap a control to inspect OSC</code>
+          <div class="edit-actions"><button id="pad-add">＋ PAD</button><button id="switch-add">＋ SWITCH</button><button id="fader-add">＋ FADER</button></div>
         </div>
         <div id="control-board"></div>
       </section>
@@ -72,7 +92,7 @@
           </div>
         </div>
         <div class="speaker-panel">
-          <div class="subhead">SPEAKERS <button id="speaker-add">＋ SPEAKER</button></div>
+          <div class="subhead">SPEAKERS <small id="speaker-count">0 / 64</small><button id="speaker-add">＋ SPEAKER</button></div>
           <div id="speakers"></div>
         </div>
       </div>
@@ -81,16 +101,32 @@
         <div class="settings-grid two">
           <label>Rolloff dB<input id="dbap-rolloff" type="number" min="0.1" step="0.1"></label>
           <label>Blur metres<input id="dbap-blur" type="number" min="0.01" step="0.01"></label>
-          <label>Range metres <small>0 = all</small><input id="dbap-range" type="number" min="0" step="0.1"></label>
+          <label>Hard center metres <small>XY · outer 1× fades · 0 = off</small><input id="dbap-hard-center" type="number" min="0" step="0.05"></label>
+          <label>Range metres <small>outer 25% fades · 0 = all</small><input id="dbap-range" type="number" min="0" step="0.1"></label>
         </div>
       </details>
       <div class="sheet-footer">
-        <button id="project-import">IMPORT JSON</button><input id="project-file" type="file" accept="application/json" hidden>
+        <button id="project-import">IMPORT JSON</button>
         <button id="project-export">EXPORT JSON</button>
+        <button id="project-reset-ids" class="danger-action">RESET ID COUNTERS</button>
         <span>Changes save automatically</span>
       </div>
     </div>
   </div>
+  <div id="control-metadata" class="sheet metadata-sheet" hidden>
+    <form id="control-metadata-form" class="sheet-card metadata-card">
+      <div class="sheet-head"><div><b>CONTROL LABEL</b><span id="control-metadata-id">—</span></div><button id="control-metadata-close" type="button">×</button></div>
+      <label class="metadata-label">Display name
+        <input id="control-label" type="text" maxlength="40" autocomplete="off" placeholder="e.g. メインボーカル">
+      </label>
+      <code id="control-metadata-osc">—</code>
+      <div class="metadata-actions">
+        <button id="control-label-clear" type="button">CLEAR</button>
+        <button type="submit">APPLY</button>
+      </div>
+    </form>
+  </div>
+  <input id="project-file" type="file" accept="application/json" hidden>
   <div id="toast" role="status"></div>
   <script src="/app.js" defer></script>
 </body>
