@@ -10,6 +10,7 @@ let toggleStates = {};
 let socket = null;
 let selectedSource = null;
 let inspectedControl = null;
+let activeGeneralPage = null;
 let metadataControlId = null;
 let pendingLabelUpdate = null;
 const linkedSourceIds = new Set();
@@ -49,6 +50,7 @@ function connect() {
       toggleStates=message.toggleStates||{};
       if (message.type === "state.full") setStatus(message.oscReady);
       if (!project.spatialSources.some((source) => source.id === selectedSource)) selectedSource = project.spatialSources[0]?.id ?? null;
+      if (!project.generalPages.some((page) => page.id === activeGeneralPage)) activeGeneralPage = project.generalPages[0]?.id ?? null;
       for(const id of linkedSourceIds)if(!project.spatialSources.some((source)=>source.id===id))linkedSourceIds.delete(id);
       render();
     } else if (message.type === "spatial.moved") {
@@ -65,6 +67,8 @@ function connect() {
       if(message.gate)toggleStates[message.id]=1;else delete toggleStates[message.id];updateToggleControl(message.id,message.gate);
     } else if(message.type==="control.updated"){
       if(pendingLabelUpdate?.requestId===message.requestId){const notice=pendingLabelUpdate.notice;clearTimeout(pendingLabelUpdate.timer);pendingLabelUpdate=null;toast(notice);}
+    } else if(message.type==="generalPage.added"){
+      activeGeneralPage=message.page.id;inspectedControl=null;render();
     } else if (message.type === "project.data") downloadProject(message.project);
     else if (message.type === "error") toast(message.message);
   });
@@ -116,7 +120,7 @@ function render() {
   document.body.classList.toggle("editing", editMode);
   $("mode").textContent = editMode ? "EDIT" : "LIVE"; $("mode").classList.toggle("edit", editMode);
   $("project-name").textContent = project.name;
-  updateOscReadouts();renderSources();renderSceneControls();renderControls();renderSettings();requestAnimationFrame(() => { drawStage(); drawLayout(); syncViewControls(); });
+  updateOscReadouts();renderSources();renderSceneControls();renderGeneralPages();renderControls();renderSettings();requestAnimationFrame(() => { drawStage(); drawLayout(); syncViewControls(); });
 }
 
 function renderSources() {
@@ -157,8 +161,21 @@ function bindSceneButton(slot){
   button.addEventListener("click",(event)=>{if(longPress){longPress=false;event.preventDefault();return;}morphValue=slot==="A"?0:1;renderSceneControls();send({type:"scene.store",slot});toast(`Scene ${slot} stored · hold to clear`);});
 }
 
+function renderGeneralPages(){
+  const tabs=project.generalPages.map((page)=>{
+    const button=document.createElement("button");button.className="general-tab";button.type="button";button.role="tab";button.textContent=page.name;button.title=`${page.name} · ${page.id}`;button.dataset.pageId=page.id;button.setAttribute("aria-selected",String(page.id===activeGeneralPage));
+    button.addEventListener("click",()=>{if(activeGeneralPage===page.id)return;activeGeneralPage=page.id;inspectedControl=null;$("general-osc-hint").textContent="Tap a control to inspect OSC";renderGeneralPages();renderControls();});
+    return button;
+  });
+  $("general-tabs").replaceChildren(...tabs);
+  const active=project.generalPages.find((page)=>page.id===activeGeneralPage);
+  $("general-page-rename").disabled=!active;
+  $("general-page-remove").disabled=!active||project.generalPages.length<=1;
+}
+
 function renderControls() {
-  const board = $("control-board"); board.replaceChildren(...project.controls.map((control) => {
+  const controls=project.controls.filter((control)=>control.pageId===activeGeneralPage);
+  const board = $("control-board"); board.replaceChildren(...controls.map((control) => {
     const isSwitch=control.type==="pad"&&control.mode==="toggle",switchOn=isSwitch&&Boolean(toggleStates[control.id]);
     const element = document.createElement("div"); element.className = `control ${control.type}${isSwitch?" switch":""}${switchOn?" on":""}`; element.dataset.id = control.id;
     Object.assign(element.style, { left:`${control.x*100}%`, top:`${control.y*100}%`, width:`${control.w*100}%`, height:`${control.h*100}%` });
@@ -457,14 +474,16 @@ bindSceneButton("A");bindSceneButton("B");
 $("scene-morph").addEventListener("input",()=>applySceneMorph(Number($("scene-morph").value)));
 $("scene-morph").addEventListener("change",flushSpatialMoves);
 $("spatial-add").addEventListener("click",()=>send({type:"spatial.add"}));
-$("pad-add").addEventListener("click",()=>send({type:"control.add",controlType:"pad"}));
-$("switch-add").addEventListener("click",()=>send({type:"control.add",controlType:"switch"}));
-$("fader-add").addEventListener("click",()=>send({type:"control.add",controlType:"fader"}));
+$("pad-add").addEventListener("click",()=>send({type:"control.add",controlType:"pad",pageId:activeGeneralPage}));
+$("switch-add").addEventListener("click",()=>send({type:"control.add",controlType:"switch",pageId:activeGeneralPage}));
+$("fader-add").addEventListener("click",()=>send({type:"control.add",controlType:"fader",pageId:activeGeneralPage}));
+$("general-page-add").addEventListener("click",()=>send({type:"generalPage.add"}));
+$("general-page-rename").addEventListener("click",()=>{const page=project?.generalPages.find((item)=>item.id===activeGeneralPage);if(!page)return;const name=prompt("Page name",page.name);if(name===null)return;send({type:"generalPage.rename",id:page.id,name});});
+$("general-page-remove").addEventListener("click",()=>{const page=project?.generalPages.find((item)=>item.id===activeGeneralPage);if(!page)return;if(project.generalPages.length<=1){toast("At least one page is required");return;}if(project.controls.some((control)=>control.pageId===page.id)){toast("Delete the controls on this page first");return;}if(confirm(`Delete empty page “${page.name}”?`))send({type:"generalPage.remove",id:page.id});});
 $("speaker-add").addEventListener("click",()=>send({type:"speaker.add"}));
 $("project-load").addEventListener("click",()=>$("project-file").click());
 $("project-save").addEventListener("click",()=>send({type:"project.export"}));
 $("project-export").addEventListener("click",()=>send({type:"project.export"}));
-$("project-reset-ids").addEventListener("click",()=>{if(!confirm("Reset all ID counters?\n\nExisting IDs will not change. Future Speaker, Source, Pad/Switch, and Fader additions may reuse the lowest available numbers."))return;send({type:"project.resetIds"});toast("ID counters reset");});
 $("project-import").addEventListener("click",()=>$("project-file").click());
 $("project-file").addEventListener("change",async()=>{try{const data=JSON.parse(await $("project-file").files[0].text());send({type:"project.import",project:data});toast("Project imported");}catch{toast("Invalid project file");}$("project-file").value="";});
 function downloadProject(data){const blob=new Blob([JSON.stringify(data,null,2)+"\n"],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${data.name.replace(/[^A-Za-z0-9_-]+/g,"-")||"project"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}

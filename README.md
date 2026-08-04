@@ -15,12 +15,14 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 - タップごとに`1 / 0`を切り替えるSwitch型Pad
 - EDITモードでPad/Faderを自由配置、LIVEモードで構造編集をロック
 - EDITモードでPad/Faderの幅と高さをリサイズ
+- General Controlsを複数ページに分けるタブ
+- 新規General Controlを既存要素と重ならない空き領域へ自動配置
 - OSC IDを維持したままPad/Faderへ日本語対応の表示名を設定
-- Studio / グリーンユートピアのHype / Light / Ocean / Power / Liminal / Gorgeousテーマ切替
+- Studio / Hype / Light / Ocean / Power / Liminal / Gorgeousテーマ切替
 - Source IDごとの固定カラー（テーマ対応）
 - 選択Sourceから各Speakerへのgainを線・リング・%で可視化
 - Projectの自動保存、JSON Import / Export、最大5世代バックアップ
-- 安定した自動ID（`SP01`, `S01`, `P01`, `F01`）。削除しても自動では再番号付け・再利用しません
+- 安定した自動ID（`SP01`, `S01`, `P01`, `F01`）。既存要素は再番号付けせず、削除で空いた最小番号を次の追加時に再利用します
 - Spatialイベントを1つのOSC Bundleとして送信
 - 選択Sourceと最後に触れたPad/FaderのOSCアドレス・現在値、現在のUDP送信先を画面内に表示
 - Relative Linkによる複数Sourceの同時移動
@@ -39,6 +41,8 @@ npm start
 
 Macでは `http://localhost:8080`、同じネットワークのiPadでは `http://<MacのIP>:8080` を開きます。
 SETUPでOSC送信先をMaxが動いているMacのIP、portを`7400`に設定してください。
+
+iPadではChromeで画面を開き、アドレスバー右側の共有メニューから`ホーム画面に追加`を選びます。追加された`Performance PA`アイコンから起動すると、アドレスバーやブラウザ操作列のないstandalone表示になります。通常のChromeタブ内で開いている間は、Web側からアドレスバーを恒久的に消すことはできません。
 
 開発時は次も利用できます。
 
@@ -91,6 +95,9 @@ Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を�
 - FaderのControl内側は、横方向を含めて全面がタッチ領域です。
 - Faderは触れた位置へ値をジャンプさせず、現在値を基準にした相対ドラッグです。最初の6pxはデッドゾーンになっています。
 - EDITにするとPad、Switch、Faderの追加、削除、ドラッグ配置ができます。
+- General Controls上部のタブでページを切り替えます。EDIT中は右端の`＋ / ✎ / ×`でページの追加、名称変更、空ページの削除ができます。ページ名は日本語にも対応します。
+- 追加時は空き領域を左上から探索し、既存Controlと重ならない位置へ配置します。空きがない場合は重ねずに追加を中止します。
+- Padは最小幅で縦に約2段置ける高さ、Switchは最小幅の縦長サイズで追加されます。
 - EDIT中は右下のリサイズハンドルで幅と高さを変更できます。
 - EDIT中にControl左上の`✎`を押すと、OSC IDを変更せずに表示名を設定・Clearできます。日本語や絵文字も入力できます。
 - LIVEに戻すと配置操作を受け付けません。
@@ -99,11 +106,11 @@ Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を�
 
 ## Projectデータ
 
-通常は`projects/_active.json`へ自動保存され、Gitには含まれません。ProjectにはOSC設定、部屋、スピーカー、Spatial Source、Scene A/B、Pad/Faderと配置だけが保存されます。音声ファイルへのパスは保存しません。
+通常は`projects/_active.json`へ自動保存され、Gitには含まれません。ProjectにはOSC設定、部屋、スピーカー、Spatial Source、Scene A/B、General Controlのページ、Pad/Faderと配置だけが保存されます。音声ファイルへのパスは保存しません。旧形式のProject JSONにページ情報がない場合は、読み込み時に全Controlを`MAIN`ページへ自動移行します。
 
 メイン画面のProject名右側にある`IMPORT / EXPORT`から、SETUPを開かずにProject JSONを読み込み・書き出しできます。SETUP内の`IMPORT JSON / EXPORT JSON`も同じ操作です。通常の作業状態は別途自動保存されます。
 
-SETUP最下部の`RESET ID COUNTERS`は、既存要素のIDを変更せず、次回追加時から各種IDの空いている最小番号を再利用可能にします。Max側のOSCアサインと異なる要素へ同じアドレスが再利用される可能性があるため、確認後にのみ実行されます。
+IDは追加のたびに実際の空きを確認します。たとえば`P01, P02, P03`から`P02`を削除すると、既存の`P01, P03`はそのままで、次のPadまたはSwitchが`P02`になります。Max側で削除済みIDのアサインを残している場合は、新しい要素が同じOSCアドレスを使う点に注意してください。
 
 ## 設計境界
 
