@@ -192,7 +192,7 @@ function renderControls() {
     if (control.type === "pad") {
       element.append(title);if(isSwitch){const state=document.createElement("i");state.className="switch-state";state.textContent=switchOn?"ON":"OFF";element.append(state);}
       element.addEventListener("pointerdown", (event) => {
-        if(editMode){showControlOsc(control);beginControlDrag(event,control,element);return;}
+        if(editMode){showControlOsc(control);if(!usesMobileAutoLayout())beginControlDrag(event,control,element);return;}
         padTouches.set(event.pointerId,{id:control.id,element,inside:true,isSwitch});showControlOsc(control);element.classList.add("held");element.setPointerCapture(event.pointerId);event.preventDefault();
       });
       element.addEventListener("pointermove",updatePadTouch);
@@ -204,7 +204,7 @@ function renderControls() {
       const rail=document.createElement("div");rail.className="fader-rail";rail.innerHTML='<i class="fader-fill"></i><i class="fader-thumb"></i>';
       element.style.setProperty("--value",control.value);
       input.addEventListener("input", () => { control.value=Number(input.value);element.style.setProperty("--value",input.value);output.textContent = `${Math.round(input.value*100)}%`;showControlOsc(control);send({ type:"control.value", id:control.id, value:control.value }); });
-      element.append(title,rail,output,input); element.addEventListener("pointerdown", (event) => { showControlOsc(control);if (editMode) beginControlDrag(event, control, element); else beginFaderTouch(event,control,element,input,output); });
+      element.append(title,rail,output,input); element.addEventListener("pointerdown", (event) => { showControlOsc(control);if (editMode){if(!usesMobileAutoLayout())beginControlDrag(event,control,element);}else beginFaderTouch(event,control,element,input,output); });
     }
     const metadata=document.createElement("button");metadata.className="metadata-handle";metadata.textContent="✎";metadata.setAttribute("aria-label",`Edit display name for ${control.id}`);metadata.addEventListener("pointerdown",(event)=>{event.stopPropagation();event.preventDefault();openControlMetadata(control);});element.append(metadata);
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
@@ -248,9 +248,10 @@ function beginControlDrag(event, control, element) {
   element.setPointerCapture(event.pointerId); event.preventDefault();
 }
 function beginControlResize(event,control,element){
-  if(!editMode)return;event.stopPropagation();event.preventDefault();const boardRect=$("control-board").getBoundingClientRect();
+  if(!editMode||usesMobileAutoLayout())return;event.stopPropagation();event.preventDefault();const boardRect=$("control-board").getBoundingClientRect();
   controlResize={pointer:event.pointerId,control,element,boardRect,startX:event.clientX,startY:event.clientY,startW:control.w,startH:control.h};event.currentTarget.setPointerCapture(event.pointerId);
 }
+function usesMobileAutoLayout(){return matchMedia("(max-width:600px) and (orientation:portrait)").matches;}
 function beginFaderTouch(event,control,element,input,output){
   const rect=element.getBoundingClientRect();
   faderTouch={pointer:event.pointerId,control,element,input,output,startY:event.clientY,startValue:control.value,travel:Math.max(60,rect.height-42),active:false,lastSent:control.value,pending:null,frame:0};
