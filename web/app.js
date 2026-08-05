@@ -184,9 +184,9 @@ function renderGeneralPages(){
 }
 
 function renderControls() {
-  const allControls=project.controls.filter((control)=>control.pageId===activeGeneralPage),board=$("control-board"),capacity=mobileGeneralCapacity(board),pageCount=Math.max(1,Math.ceil(allControls.length/capacity));
+  const allControls=project.controls.filter((control)=>control.pageId===activeGeneralPage),board=$("control-board"),mobilePages=paginateMobileGeneralControls(allControls,board),pageCount=mobilePages.length;
   mobileGeneralSubpage=Math.max(0,Math.min(pageCount-1,mobileGeneralSubpage));
-  const controls=Number.isFinite(capacity)?allControls.slice(mobileGeneralSubpage*capacity,(mobileGeneralSubpage+1)*capacity):allControls;
+  const controls=mobilePages[mobileGeneralSubpage];
   updateMobileGeneralPager(pageCount);
   board.replaceChildren(...controls.map((control) => {
     const isSwitch=control.type==="pad"&&control.mode==="toggle",switchOn=isSwitch&&Boolean(toggleStates[control.id]);
@@ -217,10 +217,16 @@ function renderControls() {
   }));
 }
 
-function mobileGeneralCapacity(board){
-  if(!usesMobileAutoLayout())return Infinity;
+function mobileGeneralRows(board){
   const available=board.clientHeight||Math.max(124,innerHeight-260),rowHeight=124,gap=8,padding=16;
-  return Math.max(2,Math.floor((available-padding+gap)/(rowHeight+gap))*2);
+  return Math.max(2,Math.floor((available-padding+gap)/(rowHeight+gap)));
+}
+function paginateMobileGeneralControls(controls,board){
+  if(!usesMobileAutoLayout())return[controls];
+  const rows=mobileGeneralRows(board),pages=[];let page=[],occupied=Array.from({length:rows},()=>[false,false]);
+  const place=(height)=>{for(let row=0;row<=rows-height;row++)for(let column=0;column<2;column++){let free=true;for(let offset=0;offset<height;offset++)if(occupied[row+offset][column])free=false;if(free){for(let offset=0;offset<height;offset++)occupied[row+offset][column]=true;return true;}}return false;};
+  for(const control of controls){const height=control.type==="fader"?2:1;if(!place(height)&&page.length){pages.push(page);page=[];occupied=Array.from({length:rows},()=>[false,false]);place(height);}page.push(control);}
+  if(page.length||!pages.length)pages.push(page);return pages;
 }
 function updateMobileGeneralPager(pageCount){
   const pager=$("mobile-general-pager"),multiple=pageCount>1;pager.setAttribute("aria-hidden",String(!multiple));pager.classList.toggle("inactive",!multiple);
