@@ -34,6 +34,15 @@ const pendingSpatialMoves = new Map();
 let spatialMoveFrame = 0;
 let layoutOrbit = null;
 let layoutPinch = null;
+let mobilePanel=localStorage.getItem("pps-mobile-panel")==="general"?"general":"spatial";
+
+function setMobilePanel(panel,redraw=true){
+  mobilePanel=panel==="general"?"general":"spatial";document.querySelector("main").dataset.mobilePanel=mobilePanel;localStorage.setItem("pps-mobile-panel",mobilePanel);
+  document.querySelectorAll("#mobile-tabs [data-mobile-panel]").forEach((button)=>button.setAttribute("aria-selected",String(button.dataset.mobilePanel===mobilePanel)));
+  if(redraw&&mobilePanel==="spatial")requestAnimationFrame(drawStage);
+}
+document.querySelectorAll("#mobile-tabs [data-mobile-panel]").forEach((button)=>button.addEventListener("click",()=>setMobilePanel(button.dataset.mobilePanel)));
+setMobilePanel(mobilePanel,false);
 
 function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
 function toast(message) { $("toast").textContent = message; $("toast").classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("on"), 1800); }
