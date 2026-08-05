@@ -495,8 +495,16 @@ const savedView=localStorage.getItem("pps-view");if(savedView==="2d"||savedView=
 
 function patchProject() { send({type:"project.patch",patch:{name:$("set-name").value,osc:{host:$("set-host").value,port:Number($("set-port").value),namespace:$("set-namespace").value},room:{width_m:Number($("room-width").value),depth_m:Number($("room-depth").value),height_m:Number($("room-height").value)},dbap:{rolloff_db:Number($("dbap-rolloff").value),blur_m:Number($("dbap-blur").value),hardCenter_m:Number($("dbap-hard-center").value),maxDist_m:Number($("dbap-range").value)}}}); }
 ["set-name","set-host","set-port","set-namespace","room-width","room-depth","room-height","dbap-rolloff","dbap-blur","dbap-hard-center","dbap-range"].forEach((id)=>$(id).addEventListener("change",patchProject));
-function applyTheme(next){theme=themeNames.includes(next)?next:"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").value=theme;document.querySelector('meta[name="theme-color"]').content=getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();if(project)renderSources();requestAnimationFrame(redrawViews);}
+function applyTheme(next){theme=themeNames.includes(next)?next:"studio";document.documentElement.dataset.theme=theme;localStorage.setItem("pps-theme",theme);$("theme").value=theme;document.querySelector('meta[name="theme-color"]').content=getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();renderMobileThemeOptions();if(project)renderSources();requestAnimationFrame(redrawViews);}
+function renderMobileThemeOptions(){
+  $("mobile-theme-current").textContent=theme.toUpperCase();$("mobile-theme-options").replaceChildren(...themeNames.map((name)=>{const button=document.createElement("button");button.type="button";button.textContent=name.toUpperCase();button.classList.toggle("selected",name===theme);button.addEventListener("click",()=>{applyTheme(name);closeMobileThemeMenu();});return button;}));
+}
+function openMobileThemeMenu(){renderMobileThemeOptions();$("mobile-theme-menu").hidden=false;}
+function closeMobileThemeMenu(){$("mobile-theme-menu").hidden=true;}
 $("theme").addEventListener("change",()=>applyTheme($("theme").value));
+$("mobile-theme-open").addEventListener("click",openMobileThemeMenu);
+$("mobile-theme-close").addEventListener("click",closeMobileThemeMenu);
+$("mobile-theme-menu").addEventListener("pointerdown",(event)=>{if(event.target===$("mobile-theme-menu"))closeMobileThemeMenu();});
 applyTheme(theme);
 $("mode").addEventListener("click",()=>{editMode=!editMode;if(editMode)linkSelecting=false;render();});
 $("settings-open").addEventListener("click",()=>{if(!editMode){toast("Switch to EDIT to change setup");return;}$("settings").hidden=false;renderSettings();requestAnimationFrame(drawLayout);});

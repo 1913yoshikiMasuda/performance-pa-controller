@@ -55,6 +55,7 @@ header { height:62px; flex:none; display:flex; align-items:center; gap:14px; pad
 .status { margin-left:auto; display:flex; align-items:center; gap:7px; color:var(--muted); font-size:11px; }.status i { width:8px; height:8px; border-radius:50%; background:#626b76; }.status.ok i { background:var(--ok); box-shadow:0 0 10px var(--ok); }
 .osc-destination { display:flex; flex-direction:column; min-width:92px; color:var(--muted); font:9px/1.15 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; }.osc-destination b { margin-top:3px; color:var(--ok); font-size:10px; letter-spacing:.04em; }
 .quiet { background:transparent; }.theme-select { min-width:142px; min-height:38px; padding:0 9px; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--general); font-size:11px; font-weight:650; }.mode { min-width:80px; border-color:var(--ok); color:var(--ok); font-weight:700; letter-spacing:.08em; }.mode.edit { border-color:var(--general); color:var(--general); }
+.mobile-theme-open,.mobile-theme-menu { display:none; }
 main { flex:1; min-height:0; padding:12px 16px 16px; display:grid; grid-template-rows:minmax(300px,2fr) minmax(180px,1fr); gap:12px; }
 .spatial-shell,.general-shell { border:1px solid var(--line); border-radius:15px; background:var(--surface); overflow:hidden; }
 .spatial-shell { min-height:0; display:grid; grid-template-columns:130px minmax(0,1fr) 74px; border-top:2px solid var(--spatial); }
@@ -83,8 +84,9 @@ details { margin-top:14px; color:var(--muted); }summary { cursor:pointer; }.shee
 @media (max-width:600px) and (orientation:portrait) {
   html,body,#app { height:100%; height:100dvh; }
   header { height:calc(52px + env(safe-area-inset-top)); padding:max(6px,env(safe-area-inset-top)) max(9px,env(safe-area-inset-right)) 6px max(9px,env(safe-area-inset-left)); gap:7px; }
-  .brand b { font-size:12px; }.brand span,.project-name,.project-actions,.osc-destination,.theme-select { display:none; }
+  .brand { min-width:0; }.brand b { max-width:78px; overflow:hidden; font-size:11px; white-space:nowrap; }.brand span,.project-name,.project-actions,.osc-destination,.theme-select { display:none; }
   .status { margin-left:auto; min-width:auto; }.status span { display:none; }.status i { width:7px; height:7px; }
+  .mobile-theme-open { width:54px; min-width:54px; min-height:34px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2px 4px; color:var(--general); line-height:1; }.mobile-theme-open span { font-size:8px; font-weight:750; letter-spacing:.1em; }.mobile-theme-open small { max-width:46px; margin-top:3px; overflow:hidden; color:var(--muted); font-size:6px; text-overflow:ellipsis; }
   #settings-open { min-width:48px; min-height:34px; padding:0 7px; font-size:9px; }
   .mode { min-width:58px; min-height:34px; padding:0 8px; font-size:10px; }
 
@@ -141,4 +143,12 @@ details { margin-top:14px; color:var(--muted); }summary { cursor:pointer; }.shee
   .mobile-tabs button[data-mobile-panel="general"][aria-selected="true"] { color:var(--general); box-shadow:inset 0 2px var(--general); }
 
   .sheet { padding:env(safe-area-inset-top) 5px max(5px,env(safe-area-inset-bottom)); }.sheet-card { border-radius:12px; }
+  .mobile-theme-menu { position:fixed; z-index:30; inset:0; display:flex; align-items:flex-end; padding:12px max(10px,env(safe-area-inset-right)) calc(72px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); background:var(--sheet-overlay); backdrop-filter:blur(10px); }
+  .mobile-theme-menu[hidden] { display:none; }
+  .mobile-theme-menu>section { width:100%; padding:12px; border:1px solid var(--line); border-radius:14px; background:var(--sheet-bg); box-shadow:0 18px 55px var(--shadow); }
+  .mobile-theme-menu>section>div:first-child { display:flex; align-items:center; justify-content:space-between; height:36px; color:var(--muted); font-size:9px; letter-spacing:.12em; }
+  #mobile-theme-close { width:34px; min-width:34px; min-height:32px; padding:0; font-size:18px; }
+  .mobile-theme-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:6px; }
+  .mobile-theme-options button { min-height:46px; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.09em; }
+  .mobile-theme-options button.selected { border-color:var(--general); background:var(--control-held); color:var(--general); box-shadow:inset 3px 0 var(--general); }
 }

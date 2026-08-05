@@ -19,7 +19,7 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 - General Controlsを複数ページに分けるタブ
 - 新規General Controlを既存要素と重ならない空き領域へ自動配置
 - OSC IDを維持したままPad/Faderへ日本語対応の表示名を設定
-- Studio / Hype / Light / Ocean / Power / Liminal / Gorgeousテーマ切替
+- Studio / Hype / Light / Ocean / Power / Liminal / Gorgeousテーマ切替（スマホはSKINメニュー）
 - Source IDごとの固定カラー（テーマ対応）
 - 選択Sourceから各Speakerへのgainを線・リング・%で可視化
 - Projectの自動保存、JSON Import / Export、最大5世代バックアップ
