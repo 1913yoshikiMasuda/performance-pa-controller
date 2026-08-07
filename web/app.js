@@ -31,6 +31,7 @@ const layoutPointers = new Map();
 let stageGesture = null;
 let stagePinch = null;
 let sourceDrag = null;
+let retriggerHold = null;
 const pendingSpatialMoves = new Map();
 let spatialMoveFrame = 0;
 let layoutOrbit = null;
@@ -51,7 +52,7 @@ function toast(message) { $("toast").textContent = message; $("toast").classList
 function connect() {
   socket = new WebSocket(`ws://${location.host}`);
   socket.addEventListener("open", () => { $("status").querySelector("span").textContent = "Hub connected"; send({ type:"state.request" }); });
-  socket.addEventListener("close", () => { setStatus(false); setTimeout(connect, 1000); });
+  socket.addEventListener("close", () => { retriggerHold=null;$("spatial-retrigger").classList.remove("held");setStatus(false);setTimeout(connect, 1000); });
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "state.full" || message.type === "state.project") {
@@ -91,7 +92,7 @@ function formatOscNumber(value){const rounded=Number(value).toFixed(3).replace(/
 function formatOscList(values,limit=8){const visible=values.slice(0,limit).map(formatOscNumber).join(" "),remaining=values.length-limit;return `${visible}${remaining>0?` … +${remaining}ch`:""}`;}
 function showSpatialOsc(id=selectedSource){
   const source=project?.spatialSources.find((item)=>item.id===id);if(!source){$("spatial-osc-hint").textContent="—";return;}
-  const gate=sourceDrag?.ids?.includes(id)?1:0,gains=gainsBySource[id]||[];
+  const gate=sourceDrag?.ids?.includes(id)||retriggerHold?.ids?.includes(id)?1:0,gains=gainsBySource[id]||[];
   $("spatial-osc-hint").textContent=`${oscPath(`spatial/${id}/trigger`)}  ${gate}\n${oscPath(`spatial/${id}/position`)}  ${formatOscList(source.position,3)}\n${oscPath(`spatial/${id}/gains`)}  ${formatOscList(gains)}`;
 }
 function showControlOsc(control){
@@ -145,7 +146,7 @@ function renderSources() {
     const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"spatial.remove", id:source.id }); });
     wrap.append(button, remove); return wrap;
   }));
-  const source = selected();if(source)$("height").value=source.position[2];updateHeight();renderLinkControl();
+  const source = selected();if(source)$("height").value=source.position[2];$("spatial-retrigger").disabled=editMode||!source;updateHeight();renderLinkControl();
 }
 
 function renderLinkControl(){
@@ -401,7 +402,7 @@ function isInsideRoom(point,z,view){
 const stageCanvas=$("stage");
 stageCanvas.addEventListener("pointerdown",(event)=>{
   const point=pointerInCanvas(event,stageCanvas);stagePointers.set(event.pointerId,point);stageCanvas.setPointerCapture(event.pointerId);
-  if(sourceDrag){stagePointers.delete(event.pointerId);return;}
+  if(sourceDrag||retriggerHold){stagePointers.delete(event.pointerId);return;}
   if(stagePointers.size===2&&camera.mode==="3d"){stagePinch={distance:pointerDistance(stagePointers),zoom:camera.zoom};stageGesture=null;return;}
   const source=selected(),view=projection(stageCanvas),inside=source&&isInsideRoom(point,source.position[2],view);
   if(!editMode&&source&&inside){const target=unprojectPoint(point.x*view.dpr,point.y*view.dpr,source.position[2],view),updates=moveSourceGroup(source.id,target),ids=updates.map(({id})=>id);sourceDrag={pointer:event.pointerId,id:source.id,ids,z:source.position[2]};stageGesture=null;showSpatialOsc(source.id);send({type:"spatial.batchTrigger",updates});drawStage();return;}
@@ -427,6 +428,22 @@ stageCanvas.addEventListener("wheel",(event)=>{if(camera.mode!=="3d")return;even
 $("height").addEventListener("input", () => { const source=selected();if(!source)return;const target=[...source.position];target[2]=Number($("height").value);const updates=moveSourceGroup(source.id,target,[2]);showSpatialOsc(source.id);queueSpatialMoves(updates);updateHeight();drawStage(); });
 $("height").addEventListener("change",flushSpatialMoves);
 function updateHeight() { const source=selected(); const value=source?.position[2] ?? 0; $("height-value").textContent=project?`${(value*project.room.height_m).toFixed(1)}m`:"0m"; }
+
+const spatialRetrigger=$("spatial-retrigger");
+spatialRetrigger.addEventListener("pointerdown",(event)=>{
+  const source=selected();if(editMode||!source||sourceDrag||retriggerHold)return;
+  event.preventDefault();spatialRetrigger.setPointerCapture(event.pointerId);flushSpatialMoves();
+  const updates=linkedSourcesFor(source.id).map((member)=>({id:member.id,position:[...member.position]}));
+  retriggerHold={pointer:event.pointerId,id:source.id,ids:updates.map(({id})=>id)};spatialRetrigger.classList.add("held");showSpatialOsc(source.id);
+  send({type:"spatial.batchTrigger",updates});
+});
+function endSpatialRetrigger(event){
+  if(retriggerHold?.pointer!==event.pointerId)return;
+  const {id,ids}=retriggerHold;retriggerHold=null;spatialRetrigger.classList.remove("held");send({type:"spatial.batchRelease",ids});showSpatialOsc(id);
+}
+spatialRetrigger.addEventListener("pointerup",endSpatialRetrigger);
+spatialRetrigger.addEventListener("pointercancel",endSpatialRetrigger);
+spatialRetrigger.addEventListener("lostpointercapture",endSpatialRetrigger);
 
 function applySceneMorph(value){
   const sceneA=project.scenes?.A,sceneB=project.scenes?.B;if(!sceneA||!sceneB)return;
