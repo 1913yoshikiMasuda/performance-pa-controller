@@ -216,6 +216,7 @@ Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を�
 
 ### General Controls
 
+- ヘッダーの`GENERAL VIEW`を押すと、Spatial領域を複数のGeneralページを縦に並べた一覧へ切り替えられます。一覧内のPad、Switch、FaderはLIVE操作でき、`SPATIAL VIEW`で元のSpatial表示へ戻ります。表示モードはブラウザに保存されます。
 - Padは枠内で指を離した時だけ、trigger gateの`1`→`0`を送って発火します。触れたまま枠外へ指を逃がして離すとキャンセルされ、OSCは送られません。
 - Switchも枠内で指を離した時だけ`1 / 0`を切り替え、ON/OFF表示を更新します。枠外で離した操作はキャンセルされます。OSCアドレスは通常Padと同じ形式です。
 - Faderは操作中の値を`0.0–1.0`で送ります。
@@ -226,7 +227,7 @@ Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を�
 - 追加時は空き領域を左上から探索し、既存Controlと重ならない位置へ配置します。空きがない場合は重ねずに追加を中止します。
 - Padは最小幅で縦に約2段置ける高さ、Switchは最小幅の縦長サイズで追加されます。
 - EDIT中は右下のリサイズハンドルで幅と高さを変更できます。
-- EDIT中にControl左上の`✎`を押すと、OSC IDを変更せずに表示名を設定・Clearできます。日本語や絵文字も入力できます。
+- EDIT中にControl左上の`✎`を押すと、OSC IDを変更せずに表示名の設定・Clearと、別タブへの移動ができます。移動先で同じ位置が空いていれば配置を維持し、重なる場合は空き位置へ自動配置します。日本語や絵文字も入力できます。
 - LIVEに戻すと配置操作を受け付けません。
 
 ヘッダーの`THEME`でStudio / Hype / Light / Ocean / Power / Liminal / Gorgeousを選択できます。テーマはそのブラウザに保存され、ProjectのOSC設定やレイアウトには影響しません。

@@ -32,12 +32,14 @@
         <option value="gorgeous">THEME · GORGEOUS</option>
       </select>
       <button id="mobile-theme-open" class="mobile-theme-open" type="button"><span>SKIN</span><small id="mobile-theme-current">STUDIO</small></button>
+      <button id="workspace-view" class="quiet workspace-view" type="button" title="Show all General Control pages">GENERAL VIEW</button>
       <button id="settings-open" class="quiet">SETUP</button>
       <button id="mode" class="mode">LIVE</button>
     </header>
 
     <main>
       <section class="spatial-shell">
+        <div id="general-overview" class="general-overview" aria-label="All General Control pages"></div>
         <aside class="source-rail">
           <div class="section-title"><span>SPATIAL</span><button id="link-mode" title="Select sources to move together">LINK</button><button id="spatial-add" title="Add source">＋</button></div>
           <div id="sources"></div>
@@ -141,9 +143,12 @@
   </div>
   <div id="control-metadata" class="sheet metadata-sheet" hidden>
     <form id="control-metadata-form" class="sheet-card metadata-card">
-      <div class="sheet-head"><div><b>CONTROL LABEL</b><span id="control-metadata-id">—</span></div><button id="control-metadata-close" type="button">×</button></div>
+      <div class="sheet-head"><div><b>EDIT CONTROL</b><span id="control-metadata-id">—</span></div><button id="control-metadata-close" type="button">×</button></div>
       <label class="metadata-label">Display name
         <input id="control-label" type="text" maxlength="40" autocomplete="off" placeholder="e.g. メインボーカル">
+      </label>
+      <label class="metadata-label metadata-page-label">Move to tab
+        <select id="control-page"></select>
       </label>
       <code id="control-metadata-osc">—</code>
       <div class="metadata-actions">

@@ -89,7 +89,7 @@ export type ClientMessage =
   | { type: "scene.store"; slot: SceneSlot }
   | { type: "scene.clear"; slot: SceneSlot }
   | { type: "control.add"; controlType: "pad" | "switch" | "fader"; pageId: string }
-  | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "label" | "x" | "y" | "w" | "h">>; requestId?: string }
+  | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "label" | "pageId" | "x" | "y" | "w" | "h">>; requestId?: string }
   | { type: "control.remove"; id: string }
   | { type: "control.trigger"; id: string; gate: 0 | 1 }
   | { type: "control.toggle"; id: string }
@@ -101,7 +101,7 @@ export type ServerMessage =
   | { type: "state.project"; project: Project; gainsBySource: Record<string, number[]>; toggleStates: Record<string, 0 | 1> }
   | { type: "spatial.moved"; id: string; position: XYZ; gains: number[] }
   | { type: "spatial.fired"; id: string; position: XYZ; gains: number[]; seq: number }
-  | { type: "control.updated"; id: string; requestId: string }
+  | { type: "control.updated"; id: string; pageId: string; requestId: string }
   | { type: "control.toggled"; id: string; gate: 0 | 1 }
   | { type: "generalPage.added"; page: GeneralPage }
   | { type: "project.data"; project: Project }

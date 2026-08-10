@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { findControlPlacement, type ControlRect } from "../src/control-placement.js";
+import { findControlPlacement, isControlPlacementAvailable, type ControlRect } from "../src/control-placement.js";
 
 const overlaps = (a: ControlRect, b: ControlRect): boolean => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 describe("general control placement", () => {
+  it("keeps a moved control's position when the destination is clear", () => {
+    expect(isControlPlacementAvailable([{x:.6,y:.1,w:.2,h:.2}],{x:.1,y:.1,w:.2,h:.2})).toBe(true);
+  });
+
+  it("detects overlap before moving a control to another page", () => {
+    expect(isControlPlacementAvailable([{x:.1,y:.1,w:.2,h:.2}],{x:.2,y:.2,w:.2,h:.2})).toBe(false);
+  });
   it("places new controls only in unoccupied space", () => {
     const controls: ControlRect[] = [
       { x:.02, y:.02, w:.08, h:.72 },

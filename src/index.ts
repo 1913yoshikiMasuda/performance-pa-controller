@@ -4,7 +4,7 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { clamp01, dbapGains } from "./dbap.js";
-import { findControlPlacement } from "./control-placement.js";
+import { findControlPlacement, isControlPlacementAvailable } from "./control-placement.js";
 import { lowestAvailableId } from "./id.js";
 import { OscOutput } from "./osc.js";
 import { parseProject, ProjectStore } from "./project-store.js";
@@ -233,9 +233,20 @@ function handle(message: ClientMessage, socket: WebSocket): void {
     case "control.update": {
       const control = project.controls.find((item) => item.id === message.id);
       if (!control) throw new Error("Unknown control");
+      if (message.patch.pageId !== undefined && message.patch.pageId !== control.pageId) {
+        const destination=project.generalPages.find((page)=>page.id===message.patch.pageId);
+        if(!destination)throw new Error("Unknown destination page");
+        const destinationControls=project.controls.filter((item)=>item.pageId===destination.id&&item.id!==control.id);
+        const candidate={x:control.x,y:control.y,w:control.w,h:control.h};
+        const placement=isControlPlacementAvailable(destinationControls,candidate)
+          ? {x:control.x,y:control.y}
+          : findControlPlacement(destinationControls,control.w,control.h);
+        if(!placement)throw new Error("No free space for this control on the destination page");
+        Object.assign(control,placement);
+      }
       Object.assign(control, message.patch);
       project = parseProject(project);changed();
-      if(message.requestId)send(socket,{type:"control.updated",id:control.id,requestId:String(message.requestId).slice(0,80)});
+      if(message.requestId)send(socket,{type:"control.updated",id:control.id,pageId:control.pageId,requestId:String(message.requestId).slice(0,80)});
       break;
     }
     case "control.remove": {

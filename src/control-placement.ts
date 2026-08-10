@@ -23,13 +23,19 @@ function isSeparate(candidate: ControlRect, existing: ControlRect): boolean {
     || existing.y + existing.h + GAP <= candidate.y;
 }
 
+export function isControlPlacementAvailable(controls: ControlRect[], candidate: ControlRect): boolean {
+  return candidate.x >= 0 && candidate.y >= 0
+    && candidate.x + candidate.w <= 1 && candidate.y + candidate.h <= 1
+    && controls.every((control) => isSeparate(candidate, control));
+}
+
 export function findControlPlacement(controls: ControlRect[], width: number, height: number): Pick<ControlRect, "x" | "y"> | undefined {
   const maxX = 1 - INSET - width, maxY = 1 - INSET - height;
   if (maxX < INSET || maxY < INSET) return undefined;
   for (const y of positions(maxY)) {
     for (const x of positions(maxX)) {
       const candidate = { x, y, w:width, h:height };
-      if (controls.every((control) => isSeparate(candidate, control))) return { x, y };
+      if (isControlPlacementAvailable(controls, candidate)) return { x, y };
     }
   }
   return undefined;

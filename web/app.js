@@ -37,6 +37,13 @@ let spatialMoveFrame = 0;
 let layoutOrbit = null;
 let layoutPinch = null;
 let mobilePanel=localStorage.getItem("pps-mobile-panel")==="general"?"general":"spatial";
+let workspaceView=localStorage.getItem("pps-workspace-view")==="general"?"general":"spatial";
+
+function applyWorkspaceView(redraw=true){
+  const overview=workspaceView==="general"&&!usesMobileAutoLayout();performanceSurface.dataset.workspace=overview?"general":"spatial";
+  $("workspace-view").textContent=overview?"SPATIAL VIEW":"GENERAL VIEW";$("workspace-view").classList.toggle("on",overview);$("workspace-view").title=overview?"Return to Spatial":"Show all General Control pages";
+  if(redraw&&project){renderGeneralOverview();requestAnimationFrame(()=>overview?renderGeneralOverview():drawStage());}
+}
 
 function setMobilePanel(panel,redraw=true){
   mobilePanel=panel==="general"?"general":"spatial";document.querySelector("main").dataset.mobilePanel=mobilePanel;localStorage.setItem("pps-mobile-panel",mobilePanel);
@@ -77,7 +84,7 @@ function connect() {
     } else if(message.type==="control.toggled"){
       if(message.gate)toggleStates[message.id]=1;else delete toggleStates[message.id];updateToggleControl(message.id,message.gate);
     } else if(message.type==="control.updated"){
-      if(pendingLabelUpdate?.requestId===message.requestId){const notice=pendingLabelUpdate.notice;clearTimeout(pendingLabelUpdate.timer);pendingLabelUpdate=null;toast(notice);}
+      if(pendingLabelUpdate?.requestId===message.requestId){const notice=pendingLabelUpdate.notice,moved=pendingLabelUpdate.pageId!==pendingLabelUpdate.previousPageId;clearTimeout(pendingLabelUpdate.timer);pendingLabelUpdate=null;if(moved){activeGeneralPage=message.pageId;mobileGeneralSubpage=0;inspectedControl=message.id;}render();toast(notice);}
     } else if(message.type==="generalPage.added"){
       activeGeneralPage=message.page.id;inspectedControl=null;render();
     } else if (message.type === "project.data") downloadProject(message.project);
@@ -131,7 +138,7 @@ function render() {
   document.body.classList.toggle("editing", editMode);
   $("mode").textContent = editMode ? "EDIT" : "LIVE"; $("mode").classList.toggle("edit", editMode);
   $("project-name").textContent = project.name;
-  updateOscReadouts();renderSources();renderSceneControls();renderGeneralPages();renderControls();renderSettings();requestAnimationFrame(() => { drawStage(); drawLayout(); syncViewControls(); });
+  updateOscReadouts();renderSources();renderSceneControls();renderGeneralPages();renderControls();renderSettings();applyWorkspaceView(false);requestAnimationFrame(() => { if(performanceSurface.dataset.workspace!=="general")drawStage();drawLayout();syncViewControls(); });
 }
 
 function renderSources() {
@@ -184,38 +191,49 @@ function renderGeneralPages(){
   $("general-page-remove").disabled=!active||project.generalPages.length<=1;
 }
 
+function createControlElement(control,overview=false){
+  const isSwitch=control.type==="pad"&&control.mode==="toggle",switchOn=isSwitch&&Boolean(toggleStates[control.id]);
+  const element = document.createElement("div"); element.className = `control ${control.type}${isSwitch?" switch":""}${switchOn?" on":""}`; element.dataset.id = control.id;
+  Object.assign(element.style, { left:`${control.x*100}%`, top:`${control.y*100}%`, width:`${control.w*100}%`, height:`${control.h*100}%` });
+  const title=document.createElement("span");title.className="control-title";const titleText=document.createElement("b");titleText.textContent=control.label||control.id;title.append(titleText);if(control.label){const id=document.createElement("small");id.textContent=control.id;title.append(id);}
+  if (control.type === "pad") {
+    element.append(title);if(isSwitch){const state=document.createElement("i");state.className="switch-state";state.textContent=switchOn?"ON":"OFF";element.append(state);}
+    element.addEventListener("pointerdown", (event) => {
+      if(editMode){showControlOsc(control);if(!overview&&!usesMobileAutoLayout())beginControlDrag(event,control,element);return;}
+      padTouches.set(event.pointerId,{id:control.id,element,inside:true,isSwitch});showControlOsc(control);element.classList.add("held");element.setPointerCapture(event.pointerId);event.preventDefault();
+    });
+    element.addEventListener("pointermove",updatePadTouch);element.addEventListener("pointerup",endPadTouch);element.addEventListener("pointercancel",endPadTouch);
+  } else {
+    const input = document.createElement("input"); input.type = "range"; input.min = "0"; input.max = "1"; input.step = "0.001"; input.value = control.value;
+    const output = document.createElement("output"); output.textContent = `${Math.round(control.value*100)}%`;
+    const rail=document.createElement("div");rail.className="fader-rail";rail.innerHTML='<i class="fader-fill"></i><i class="fader-thumb"></i>';
+    element.style.setProperty("--value",control.value);
+    input.addEventListener("input", () => { control.value=Number(input.value);syncFaderControls(control.id,control.value,element);showControlOsc(control);send({ type:"control.value", id:control.id, value:control.value }); });
+    element.append(title,rail,output,input); element.addEventListener("pointerdown", (event) => { showControlOsc(control);if (editMode){if(!overview&&!usesMobileAutoLayout())beginControlDrag(event,control,element);}else beginFaderTouch(event,control,element,input,output); });
+    if(overview){element.addEventListener("pointermove",updateFaderTouch);element.addEventListener("pointerup",endFaderTouch);element.addEventListener("pointercancel",(event)=>endFaderTouch(event,false));}
+  }
+  const metadata=document.createElement("button");metadata.className="metadata-handle";metadata.textContent="✎";metadata.setAttribute("aria-label",`Edit ${control.id}`);metadata.addEventListener("pointerdown",(event)=>{event.stopPropagation();event.preventDefault();openControlMetadata(control);});element.append(metadata);
+  const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
+  const resize=document.createElement("button");resize.className="resize-handle";resize.setAttribute("aria-label",`Resize ${control.id}`);resize.addEventListener("pointerdown",(event)=>beginControlResize(event,control,element));element.append(resize);
+  return element;
+}
+
+function renderGeneralOverview(){
+  if(!project)return;
+  $("general-overview").replaceChildren(...project.generalPages.map((page)=>{
+    const section=document.createElement("section");section.className="overview-page";section.dataset.pageId=page.id;
+    const tab=document.createElement("button");tab.type="button";tab.className="overview-tab";tab.innerHTML=`<b></b><small></small>`;tab.querySelector("b").textContent=page.name;tab.querySelector("small").textContent=page.id;tab.addEventListener("click",()=>{activeGeneralPage=page.id;mobileGeneralSubpage=0;renderGeneralPages();renderControls();});
+    const board=document.createElement("div");board.className="overview-board";board.replaceChildren(...project.controls.filter((control)=>control.pageId===page.id).map((control)=>createControlElement(control,true)));
+    section.append(tab,board);return section;
+  }));
+}
+
 function renderControls() {
   const allControls=project.controls.filter((control)=>control.pageId===activeGeneralPage),board=$("control-board"),mobilePages=paginateMobileGeneralControls(allControls,board),pageCount=mobilePages.length;
   mobileGeneralSubpage=Math.max(0,Math.min(pageCount-1,mobileGeneralSubpage));
   const controls=mobilePages[mobileGeneralSubpage];
   updateMobileGeneralPager(pageCount);
-  board.replaceChildren(...controls.map((control) => {
-    const isSwitch=control.type==="pad"&&control.mode==="toggle",switchOn=isSwitch&&Boolean(toggleStates[control.id]);
-    const element = document.createElement("div"); element.className = `control ${control.type}${isSwitch?" switch":""}${switchOn?" on":""}`; element.dataset.id = control.id;
-    Object.assign(element.style, { left:`${control.x*100}%`, top:`${control.y*100}%`, width:`${control.w*100}%`, height:`${control.h*100}%` });
-    const title=document.createElement("span");title.className="control-title";const titleText=document.createElement("b");titleText.textContent=control.label||control.id;title.append(titleText);if(control.label){const id=document.createElement("small");id.textContent=control.id;title.append(id);}
-    if (control.type === "pad") {
-      element.append(title);if(isSwitch){const state=document.createElement("i");state.className="switch-state";state.textContent=switchOn?"ON":"OFF";element.append(state);}
-      element.addEventListener("pointerdown", (event) => {
-        if(editMode){showControlOsc(control);if(!usesMobileAutoLayout())beginControlDrag(event,control,element);return;}
-        padTouches.set(event.pointerId,{id:control.id,element,inside:true,isSwitch});showControlOsc(control);element.classList.add("held");element.setPointerCapture(event.pointerId);event.preventDefault();
-      });
-      element.addEventListener("pointermove",updatePadTouch);
-      element.addEventListener("pointerup",endPadTouch);
-      element.addEventListener("pointercancel",endPadTouch);
-    } else {
-      const input = document.createElement("input"); input.type = "range"; input.min = "0"; input.max = "1"; input.step = "0.001"; input.value = control.value;
-      const output = document.createElement("output"); output.textContent = `${Math.round(control.value*100)}%`;
-      const rail=document.createElement("div");rail.className="fader-rail";rail.innerHTML='<i class="fader-fill"></i><i class="fader-thumb"></i>';
-      element.style.setProperty("--value",control.value);
-      input.addEventListener("input", () => { control.value=Number(input.value);element.style.setProperty("--value",input.value);output.textContent = `${Math.round(input.value*100)}%`;showControlOsc(control);send({ type:"control.value", id:control.id, value:control.value }); });
-      element.append(title,rail,output,input); element.addEventListener("pointerdown", (event) => { showControlOsc(control);if (editMode){if(!usesMobileAutoLayout())beginControlDrag(event,control,element);}else beginFaderTouch(event,control,element,input,output); });
-    }
-    const metadata=document.createElement("button");metadata.className="metadata-handle";metadata.textContent="✎";metadata.setAttribute("aria-label",`Edit display name for ${control.id}`);metadata.addEventListener("pointerdown",(event)=>{event.stopPropagation();event.preventDefault();openControlMetadata(control);});element.append(metadata);
-    const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "×"; remove.addEventListener("click", (event) => { event.stopPropagation(); send({ type:"control.remove", id:control.id }); }); element.append(remove);
-    const resize=document.createElement("button");resize.className="resize-handle";resize.setAttribute("aria-label",`Resize ${control.id}`);resize.addEventListener("pointerdown",(event)=>beginControlResize(event,control,element));element.append(resize);
-    return element;
-  }));
+  board.replaceChildren(...controls.map((control)=>createControlElement(control)));renderGeneralOverview();
 }
 
 function mobileGeneralRows(board){
@@ -236,21 +254,27 @@ function updateMobileGeneralPager(pageCount){
 function changeMobileGeneralSubpage(delta){mobileGeneralSubpage+=delta;renderControls();}
 
 function updateToggleControl(id,gate){
-  const control=project?.controls.find((item)=>item.id===id);if(!control)return;const element=[...document.querySelectorAll(".control")].find((item)=>item.dataset.id===id);if(element){element.classList.toggle("on",Boolean(gate));const state=element.querySelector(".switch-state");if(state)state.textContent=gate?"ON":"OFF";}if(inspectedControl===id)showControlOsc(control);
+  const control=project?.controls.find((item)=>item.id===id);if(!control)return;document.querySelectorAll(".control").forEach((element)=>{if(element.dataset.id!==id)return;element.classList.toggle("on",Boolean(gate));const state=element.querySelector(".switch-state");if(state)state.textContent=gate?"ON":"OFF";});if(inspectedControl===id)showControlOsc(control);
+}
+
+function syncFaderControls(id,value,sourceElement){
+  document.querySelectorAll(".control.fader").forEach((element)=>{if(element.dataset.id!==id||element===sourceElement)return;element.style.setProperty("--value",value);const input=element.querySelector("input"),output=element.querySelector("output");if(input)input.value=value;if(output)output.textContent=`${Math.round(value*100)}%`;});
 }
 
 function openControlMetadata(control){
   metadataControlId=control.id;$("control-metadata-id").textContent=`${control.type==="pad"&&control.mode==="toggle"?"SWITCH":control.type.toUpperCase()} · ${control.id}`;$("control-label").value=control.label||"";
+  $("control-page").replaceChildren(...project.generalPages.map((page)=>{const option=document.createElement("option");option.value=page.id;option.textContent=page.name;option.selected=page.id===control.pageId;return option;}));
   $("control-metadata-osc").textContent=oscPath(`${control.type}/${control.id}/${control.type==="pad"?"trigger":"value"}`);$("control-metadata").hidden=false;
   requestAnimationFrame(()=>{$("control-label").focus();$("control-label").select();});
 }
 function closeControlMetadata(){$("control-metadata").hidden=true;metadataControlId=null;}
 function updateControlLabel(value){
-  if(!metadataControlId)return;const id=metadataControlId,label=[...String(value??"").replace(/[\u0000-\u001f\u007f]/g," ").trim()].slice(0,40).join(""),control=project.controls.find((item)=>item.id===id);if(!control)return;
-  if(label)control.label=label;else delete control.label;renderControls();
+  if(!metadataControlId)return;const id=metadataControlId,label=[...String(value??"").replace(/[\u0000-\u001f\u007f]/g," ").trim()].slice(0,40).join(""),control=project.controls.find((item)=>item.id===id),pageId=$("control-page").value;if(!control||!project.generalPages.some((page)=>page.id===pageId))return;
+  const previousPageId=control.pageId,labelChanged=label!==(control.label||""),moved=pageId!==previousPageId;
   if(pendingLabelUpdate)clearTimeout(pendingLabelUpdate.timer);const requestId=`label-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const timer=setTimeout(()=>{if(pendingLabelUpdate?.requestId===requestId){pendingLabelUpdate=null;toast("Label not saved · restart Node");}},1800);pendingLabelUpdate={id,requestId,timer,notice:label?"Display name updated":"Display name cleared"};
-  send({type:"control.update",id,patch:{label},requestId});closeControlMetadata();
+  const notice=moved?(labelChanged?"Control updated and moved":"Control moved to another tab"):(label?"Display name updated":"Display name cleared");
+  const timer=setTimeout(()=>{if(pendingLabelUpdate?.requestId===requestId){pendingLabelUpdate=null;toast("Control not saved · restart Node");}},1800);pendingLabelUpdate={id,requestId,timer,notice,pageId,previousPageId};
+  send({type:"control.update",id,patch:{label,pageId},requestId});closeControlMetadata();
 }
 
 function pointerInsideElement(event,element){const rect=element.getBoundingClientRect();return event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;}
@@ -283,7 +307,7 @@ function updateFaderTouch(event){
   if(!faderTouch||event.pointerId!==faderTouch.pointer)return;const state=faderTouch,delta=state.startY-event.clientY,slop=6;
   if(!state.active&&Math.abs(delta)<=slop)return;state.active=true;state.element.classList.add("adjusting");
   const effective=Math.sign(delta)*Math.max(0,Math.abs(delta)-slop),value=clamp01(state.startValue+effective/state.travel);
-  state.control.value=value;state.input.value=value;state.element.style.setProperty("--value",value);state.output.textContent=`${Math.round(value*100)}%`;
+  state.control.value=value;state.input.value=value;state.element.style.setProperty("--value",value);state.output.textContent=`${Math.round(value*100)}%`;syncFaderControls(state.control.id,value,state.element);
   showControlOsc(state.control);
   if(Math.abs(value-state.lastSent)<.002)return;state.pending=value;
   if(!state.frame)state.frame=requestAnimationFrame(()=>flushFaderValue(state,false));
@@ -520,6 +544,7 @@ function openMobileThemeMenu(){renderMobileThemeOptions();$("mobile-theme-menu")
 function closeMobileThemeMenu(){$("mobile-theme-menu").hidden=true;}
 $("theme").addEventListener("change",()=>applyTheme($("theme").value));
 $("mobile-theme-open").addEventListener("click",openMobileThemeMenu);
+$("workspace-view").addEventListener("click",()=>{workspaceView=workspaceView==="general"?"spatial":"general";localStorage.setItem("pps-workspace-view",workspaceView);applyWorkspaceView();});
 $("mobile-theme-close").addEventListener("click",closeMobileThemeMenu);
 $("mobile-theme-menu").addEventListener("pointerdown",(event)=>{if(event.target===$("mobile-theme-menu"))closeMobileThemeMenu();});
 applyTheme(theme);
@@ -550,5 +575,5 @@ $("project-export").addEventListener("click",()=>send({type:"project.export"}));
 $("project-import").addEventListener("click",()=>$("project-file").click());
 $("project-file").addEventListener("change",async()=>{try{const data=JSON.parse(await $("project-file").files[0].text());send({type:"project.import",project:data});toast("Project imported");}catch{toast("Invalid project file");}$("project-file").value="";});
 function downloadProject(data){const blob=new Blob([JSON.stringify(data,null,2)+"\n"],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${data.name.replace(/[^A-Za-z0-9_-]+/g,"-")||"project"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-addEventListener("resize",()=>{drawStage();drawLayout();if(project)renderControls();});
+addEventListener("resize",()=>{applyWorkspaceView(false);if(performanceSurface.dataset.workspace!=="general")drawStage();drawLayout();if(project)renderControls();});
 connect();
