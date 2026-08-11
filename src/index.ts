@@ -54,6 +54,7 @@ const server = createServer((request, response) => {
 });
 
 const wss = new WebSocketServer({ server, maxPayload: 1_000_000 });
+const webSocketAlive=new WeakMap<WebSocket,boolean>();
 const send = (socket: WebSocket, message: ServerMessage) => socket.readyState === WebSocket.OPEN && socket.send(JSON.stringify(message));
 const broadcast = (message: ServerMessage) => wss.clients.forEach((socket) => send(socket, message));
 const gainsBySource = (): Record<string, number[]> => Object.fromEntries(project.spatialSources.map((source) => [source.id, dbapGains(source.position, project)]));
@@ -95,6 +96,7 @@ function nextId(kind: keyof Project["nextIds"], prefix: string, existing: string
 
 function handle(message: ClientMessage, socket: WebSocket): void {
   switch (message.type) {
+    case "health.ping": send(socket,{type:"health.pong",seq:Math.max(0,Math.floor(Number(message.seq)||0)),osc:osc.health()});break;
     case "state.request": send(socket, fullState()); break;
     case "project.export": send(socket, { type: "project.data", project }); break;
     case "project.import": {
@@ -288,6 +290,8 @@ function handle(message: ClientMessage, socket: WebSocket): void {
 }
 
 wss.on("connection", (socket) => {
+  webSocketAlive.set(socket,true);socket.on("pong",()=>webSocketAlive.set(socket,true));
+  osc.heartbeat();
   send(socket, fullState());
   socket.on("message", (data) => {
     try { handle(JSON.parse(data.toString()) as ClientMessage, socket); }
@@ -305,6 +309,11 @@ wss.on("connection", (socket) => {
   });
 });
 
+const oscHeartbeatTimer=setInterval(()=>{if(wss.clients.size>0)osc.heartbeat();},2_000);
+oscHeartbeatTimer.unref?.();
+const webSocketHeartbeatTimer=setInterval(()=>{for(const socket of wss.clients){if(webSocketAlive.get(socket)===false){socket.terminate();continue;}webSocketAlive.set(socket,false);socket.ping();}},10_000);
+webSocketHeartbeatTimer.unref?.();
+
 server.listen(port, "0.0.0.0", () => {
   console.log(`[controller] http://localhost:${port}`);
   console.log(`[osc] ${project.osc.host}:${project.osc.port}${project.osc.namespace}`);
@@ -317,6 +326,8 @@ function shutdown(): void {
   }
   shuttingDown = true;
   if (saveTimer) clearTimeout(saveTimer);
+  clearInterval(oscHeartbeatTimer);
+  clearInterval(webSocketHeartbeatTimer);
   store.save(project);
   releaseAllGates();
   osc.close();

@@ -8,6 +8,8 @@ let project = null;
 let gainsBySource = {};
 let toggleStates = {};
 let socket = null;
+let healthSeq=0,lastHealthPong=0,connectionStartedAt=0,webRttMs=null,oscHealth={ready:false,confirmed:false};
+const pendingHealthPings=new Map();
 let selectedSource = null;
 let inspectedControl = null;
 let activeGeneralPage = null;
@@ -55,18 +57,32 @@ setMobilePanel(mobilePanel,false);
 
 function send(message) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
 function toast(message) { $("toast").textContent = message; $("toast").classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("on"), 1800); }
+function renderHealth(){
+  const webOk=socket?.readyState===WebSocket.OPEN&&performance.now()-lastHealthPong<7_000,oscOk=webOk&&oscHealth.confirmed,status=$("status");status.classList.toggle("ok",oscOk);status.classList.toggle("warn",webOk&&!oscOk);
+  $("health-label").textContent=!webOk?"WEB RECONNECTING":oscOk?"CONNECTION OK":oscHealth.ready?"OSC NO REPLY":"OSC SOCKET DOWN";
+  $("health-latency").textContent=`WEB ${webRttMs==null?"—":`${Math.round(webRttMs)}ms`} · OSC ${!oscOk||oscHealth.rttMs==null?"—":`${Math.round(oscHealth.rttMs)}ms`}`;
+  status.title=`WebSocket: ${webOk?"connected":"reconnecting"}${webRttMs==null?"":` (${Math.round(webRttMs)} ms)`}\nOSC round trip: ${oscOk?`${Math.round(oscHealth.rttMs)} ms`:oscHealth.ready?"no pong received":"socket unavailable"}`;
+}
+function sendHealthPing(){if(socket?.readyState!==WebSocket.OPEN)return;const seq=++healthSeq;pendingHealthPings.clear();pendingHealthPings.set(seq,performance.now());send({type:"health.ping",seq});}
+function restartConnection(){const stale=socket;socket=null;try{stale?.close();}catch{}pendingHealthPings.clear();webRttMs=null;oscHealth={ready:false,confirmed:false};setStatus(false);connect();}
+function healthTick(){
+  if(socket?.readyState===WebSocket.OPEN&&performance.now()-lastHealthPong>=7_000){restartConnection();return;}
+  if(socket?.readyState===WebSocket.CONNECTING&&performance.now()-connectionStartedAt>=7_000){restartConnection();return;}
+  sendHealthPing();renderHealth();
+}
 
 function connect() {
-  socket = new WebSocket(`ws://${location.host}`);
-  socket.addEventListener("open", () => { $("status").querySelector("span").textContent = "Hub connected"; send({ type:"state.request" }); });
-  socket.addEventListener("close", () => { retriggerHold=null;$("spatial-retrigger").classList.remove("held");setStatus(false);setTimeout(connect, 1000); });
-  socket.addEventListener("message", (event) => {
+  const connection=new WebSocket(`ws://${location.host}`);socket=connection;connectionStartedAt=performance.now();
+  connection.addEventListener("open", () => { if(socket!==connection)return;lastHealthPong=performance.now();sendHealthPing();send({ type:"state.request" });renderHealth(); });
+  connection.addEventListener("close", () => { if(socket!==connection)return;socket=null;retriggerHold=null;$("spatial-retrigger").classList.remove("held");pendingHealthPings.clear();webRttMs=null;oscHealth={ready:false,confirmed:false};setStatus(false);setTimeout(connect, 1000); });
+  connection.addEventListener("message", (event) => {
+    if(socket!==connection)return;
     const message = JSON.parse(event.data);
     if (message.type === "state.full" || message.type === "state.project") {
       project = message.project;
       gainsBySource = message.gainsBySource || {};
       toggleStates=message.toggleStates||{};
-      if (message.type === "state.full") setStatus(message.oscReady);
+      if (message.type === "state.full") {oscHealth.ready=Boolean(message.oscReady);setStatus(message.oscReady);}
       if (!project.spatialSources.some((source) => source.id === selectedSource)) selectedSource = project.spatialSources[0]?.id ?? null;
       if (!project.generalPages.some((page) => page.id === activeGeneralPage)) activeGeneralPage = project.generalPages[0]?.id ?? null;
       for(const id of linkedSourceIds)if(!project.spatialSources.some((source)=>source.id===id))linkedSourceIds.delete(id);
@@ -87,12 +103,14 @@ function connect() {
       if(pendingLabelUpdate?.requestId===message.requestId){const notice=pendingLabelUpdate.notice,moved=pendingLabelUpdate.pageId!==pendingLabelUpdate.previousPageId;clearTimeout(pendingLabelUpdate.timer);pendingLabelUpdate=null;if(moved){activeGeneralPage=message.pageId;mobileGeneralSubpage=0;inspectedControl=message.id;}render();toast(notice);}
     } else if(message.type==="generalPage.added"){
       activeGeneralPage=message.page.id;inspectedControl=null;render();
+    } else if(message.type==="health.pong"){
+      const started=pendingHealthPings.get(message.seq);if(started!==undefined){webRttMs=performance.now()-started;pendingHealthPings.delete(message.seq);}lastHealthPong=performance.now();oscHealth=message.osc||{ready:false,confirmed:false};renderHealth();
     } else if (message.type === "project.data") downloadProject(message.project);
     else if (message.type === "error") toast(message.message);
   });
 }
 
-function setStatus(ok) { $("status").classList.toggle("ok", ok); $("status").querySelector("span").textContent = ok ? "OSC socket ready" : "Reconnecting"; }
+function setStatus(ok) { if(!ok)lastHealthPong=0;renderHealth(); }
 function selected() { return project?.spatialSources.find((source) => source.id === selectedSource); }
 function oscPath(path){const namespace=project?.osc.namespace?.replace(/\/$/,"")||"/pps";return `${namespace}/${path}`;}
 function formatOscNumber(value){const rounded=Number(value).toFixed(3).replace(/\.?(?:0+)$/,"");return rounded==="-0"?"0":rounded;}
@@ -582,4 +600,6 @@ $("project-import").addEventListener("click",()=>$("project-file").click());
 $("project-file").addEventListener("change",async()=>{try{const data=JSON.parse(await $("project-file").files[0].text());send({type:"project.import",project:data});toast("Project imported");}catch{toast("Invalid project file");}$("project-file").value="";});
 function downloadProject(data){const blob=new Blob([JSON.stringify(data,null,2)+"\n"],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${data.name.replace(/[^A-Za-z0-9_-]+/g,"-")||"project"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 addEventListener("resize",()=>{applyWorkspaceView(false);drawStage();drawLayout();if(project)renderControls();});
+setInterval(healthTick,2_000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState!=="visible")return;if(socket?.readyState===WebSocket.OPEN&&performance.now()-lastHealthPong>=7_000)restartConnection();else sendHealthPing();});
 connect();

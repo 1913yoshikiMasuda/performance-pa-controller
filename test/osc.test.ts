@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { encodeBundle, encodeMessage, OscOutput, speakerConfigMessages } from "../src/osc.js";
+import { createSocket } from "node:dgram";
+import { decodeMessage, encodeBundle, encodeMessage, OscOutput, speakerConfigMessages } from "../src/osc.js";
 import { defaultProject } from "../src/types.js";
 
 describe("OSC encoding", () => {
@@ -8,6 +9,23 @@ describe("OSC encoding", () => {
     expect(packet.length % 4).toBe(0);
     expect(packet.subarray(0, 10).toString()).toContain("/pps/test");
     expect(packet.includes(Buffer.from(",if\0"))).toBe(true);
+  });
+
+  it("decodes heartbeat pong messages", () => {
+    const packet=encodeMessage({address:"/pps/system/pong",args:[{type:"i",value:42}]});
+    expect(decodeMessage(packet)).toEqual({address:"/pps/system/pong",args:[{type:"i",value:42}]});
+  });
+
+  it("confirms a real UDP heartbeat round trip", async () => {
+    const receiver=createSocket("udp4");await new Promise<void>((resolve)=>receiver.bind(0,"127.0.0.1",resolve));
+    const address=receiver.address();if(typeof address==="string")throw new Error("Expected UDP address");
+    const project=defaultProject();project.osc={...project.osc,host:"127.0.0.1",port:address.port};const output=new OscOutput(project.osc);
+    try{
+      const pongSent=new Promise<void>((resolve,reject)=>receiver.once("message",(packet)=>{const ping=decodeMessage(packet),seq=ping?.args[0]?.value,replyPort=Number(ping?.args[1]?.value);if(ping?.address!=="/pps/system/ping"||typeof seq!=="number"||!replyPort){reject(new Error("Invalid heartbeat ping"));return;}receiver.send(encodeMessage({address:"/pps/system/pong",args:[{type:"i",value:seq}]}),replyPort,"127.0.0.1",(error)=>error?reject(error):resolve());}));
+      output.open();for(let attempts=0;!output.isReady()&&attempts<50;attempts++)await new Promise((resolve)=>setTimeout(resolve,2));
+      output.heartbeat();await pongSent;for(let attempts=0;!output.health().confirmed&&attempts<50;attempts++)await new Promise((resolve)=>setTimeout(resolve,2));
+      expect(output.health()).toMatchObject({ready:true,confirmed:true});expect(output.health().rttMs).toBeTypeOf("number");
+    }finally{output.close();receiver.close();}
   });
 
   it("encodes an immediate bundle with size-prefixed messages", () => {

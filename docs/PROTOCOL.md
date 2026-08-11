@@ -74,6 +74,22 @@ EDITから追加できるSwitch型Padも同じ`/pad/<ID>/trigger`を使います
 
 値域は`0.0–1.0`です。操作中は連続送信されます。
 
+## Health heartbeat
+
+Web UIが接続されている間、Nodeは約2秒ごとにOSC heartbeatを送ります。第2引数はNodeがpongを待ち受ける動的UDPポートです。
+
+```text
+/pps/system/ping <sequence:int> <replyPort:int>
+```
+
+OSC受信側はsequenceを変えず、同じnamespaceの次のmessageをNodeのホストと`replyPort`へ返してください。
+
+```text
+/pps/system/pong <sequence:int>
+```
+
+付属Maxパッチは`127.0.0.1`上のNodeへ自動応答します。Maxを別マシンで動かす場合は、パッチ内の`udpsend 127.0.0.1 ...`のホストをNodeが動くマシンのIPアドレスへ変更してください。Web UIはWebSocketとOSCを個別に往復計測し、OSC pongが約6秒途絶えると警告します。
+
 ## UDPに関する注意
 
-OSC出力はUDPで、受信確認はありません。画面の`OSC socket ready`はローカル送信socketが利用可能という意味であり、Maxが受信したことを保証しません。Spatialの3 messageは順序を保つため1 Bundleにまとめています。
+通常の操作OSCはUDPで個別の受信確認を行いませんが、heartbeatのpongによって同じ送受信経路を常時監視します。Spatialの3 messageは順序を保つため1 Bundleにまとめています。

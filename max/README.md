@@ -2,6 +2,8 @@
 
 `performance-pa-controller.maxpat`はOSC疎通確認用の最小パッチです。
 
+このパッチは`/pps/system/ping <sequence> <replyPort>`を受けると、`/pps/system/pong <sequence>`をNodeへ返します。これによりWeb UIのヘッダーへWebSocketとOSCそれぞれの往復レイテンシーが表示されます。MaxとNodeを別のマシンで動かす場合は、パッチ内の`udpsend 127.0.0.1 7401`の`127.0.0.1`をNodeマシンのIPアドレスへ変更してください。ポート番号はpingごとに自動設定されます。
+
 ```text
 [udpreceive 7400]
       |

@@ -26,6 +26,7 @@ iPadなどのブラウザから操作し、発音、サンプル選択、エン�
 - 安定した自動ID（`SP01`, `S01`, `P01`, `F01`）。既存要素は再番号付けせず、削除で空いた最小番号を次の追加時に再利用します
 - Spatialイベントを1つのOSC Bundleとして送信
 - 選択Sourceと最後に触れたPad/FaderのOSCアドレス・現在値、現在のUDP送信先を画面内に表示
+- WebSocketとMaxへのOSC heartbeatを約2秒間隔で常時監視し、それぞれの往復レイテンシーと疎通状態をヘッダーに表示
 - Relative Linkによる複数Sourceの同時移動
 - Scene A/Bへの全Source位置保存とMorph Fader
 
@@ -168,6 +169,8 @@ Controllerを新しいバージョンへ入れ替えた場合は、起動前に�
 - iPadだけ開かない：MacとiPadが同じWi-Fiか、URLのIPアドレスが現在のMacのものか、macOSのファイアウォールで接続を許可したか確認します。
 - 会場やホテルのWi-Fiで開かない：同じWi-Fi内の機器同士を遮断する設定の場合があります。専用ルーターやMacのインターネット共有を使用してください。
 - `EADDRINUSE`と表示される：すでに別のControllerが起動している可能性があります。以前使ったターミナルを探してControl + Cで終了します。
+- ヘッダーが`WEB RECONNECTING`になる：Web UIとNodeのheartbeatが約7秒途絶えています。画面は自動的にWebSocketを張り直します。
+- ヘッダーが`OSC NO REPLY`になる：NodeのUDP socketは動作していますが、Maxからheartbeatのpongが約6秒以上返っていません。付属Maxパッチを開いているか、OSC port、namespace、Maxパッチ内のpong経路を確認します。
 - `npm: command not found`と表示される：Node.jsが正しくインストールされていません。手順1から確認します。
 - `npm ERR!`で止まる：インターネット接続を確認し、Controllerのフォルダ内で`npm install`をもう一度実行します。
 
@@ -181,6 +184,7 @@ npm run check
 ## 最短のMax接続
 
 同梱の [`max/performance-pa-controller.maxpat`](max/performance-pa-controller.maxpat) を開きます。受信したOSCはMax Consoleへ表示されます。
+付属パッチはheartbeatへ自動応答します。Web UI上部が`CONNECTION OK`になり、`WEB 12ms · OSC 2ms`のように両方の往復時間が表示されれば疎通確認完了です。
 実際のパッチでは `route spatial pad fader` と各IDを使って処理を分岐してください。
 
 既定のOSC namespaceとportは以下です。

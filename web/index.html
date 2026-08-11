@@ -20,7 +20,7 @@
         <button id="project-load" title="Import Project JSON">IMPORT</button>
         <button id="project-save" title="Export Project JSON">EXPORT</button>
       </div>
-      <div id="status" class="status"><i></i><span>Connecting</span></div>
+      <div id="status" class="status" title="WebSocket and OSC heartbeat"><i></i><div><span id="health-label">Connecting</span><small id="health-latency">WEB — · OSC —</small></div></div>
       <div id="osc-destination" class="osc-destination" title="OSC destination"><span id="osc-target">—</span><b id="osc-port">UDP —</b></div>
       <select id="theme" class="quiet theme-select" aria-label="Theme">
         <option value="studio">THEME · STUDIO</option>

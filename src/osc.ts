@@ -4,6 +4,7 @@ import type { Project, Speaker, XYZ } from "./types.js";
 type OscArg = { type: "f" | "i" | "s"; value: number | string };
 export interface OscMessage { address: string; args: OscArg[] }
 export interface SpatialOscFrame { id: string; position: XYZ; gains: number[] }
+export interface OscHealth { ready: boolean; confirmed: boolean; rttMs?: number; lastReplyAt?: number }
 
 export function speakerConfigMessages(namespace: string, speakers: Speaker[]): OscMessage[] {
   const base = namespace.replace(/\/$/, "");
@@ -41,11 +42,35 @@ export function encodeBundle(messages: OscMessage[]): Buffer {
   return Buffer.concat([paddedString("#bundle"), timetag, ...packets]);
 }
 
+function readPaddedString(packet: Buffer, offset: number): { value: string; next: number } | undefined {
+  const end=packet.indexOf(0,offset);if(end<0)return undefined;
+  return {value:packet.subarray(offset,end).toString("utf8"),next:Math.ceil((end+1)/4)*4};
+}
+
+export function decodeMessage(packet: Buffer): OscMessage | undefined {
+  const address=readPaddedString(packet,0);if(!address||!address.value.startsWith("/"))return undefined;
+  const tags=readPaddedString(packet,address.next);if(!tags||!tags.value.startsWith(","))return undefined;
+  let offset=tags.next;const args:OscArg[]=[];
+  for(const type of tags.value.slice(1)){
+    if(type==="i"||type==="f"){
+      if(offset+4>packet.length)return undefined;
+      args.push({type,value:type==="i"?packet.readInt32BE(offset):packet.readFloatBE(offset)});offset+=4;
+    }else if(type==="s"){
+      const value=readPaddedString(packet,offset);if(!value)return undefined;args.push({type,value:value.value});offset=value.next;
+    }else return undefined;
+  }
+  return {address:address.value,args};
+}
+
 export class OscOutput {
   private port?: Socket;
   private ready = false;
   private config: Project["osc"];
   private pendingSpeakers?: Speaker[];
+  private heartbeatSeq = 0;
+  private heartbeatPending = new Map<number, bigint>();
+  private lastHeartbeatReplyAt?: number;
+  private heartbeatRttMs?: number;
 
   constructor(config: Project["osc"]) { this.config = { ...config }; }
   isReady(): boolean { return this.ready; }
@@ -54,12 +79,31 @@ export class OscOutput {
     this.close();
     this.port = createSocket("udp4");
     this.port.on("listening", () => { this.ready = true; if (this.pendingSpeakers) this.speakerConfig(this.pendingSpeakers); });
+    this.port.on("message",(packet)=>{
+      const message=decodeMessage(packet);if(!message||message.address!==this.address("system/pong"))return;
+      const seq=message.args[0]?.type==="i"?Number(message.args[0].value):NaN,start=this.heartbeatPending.get(seq);if(!start)return;
+      this.heartbeatPending.delete(seq);this.heartbeatRttMs=Math.max(0,Number(process.hrtime.bigint()-start)/1_000_000);this.lastHeartbeatReplyAt=Date.now();
+    });
     this.port.on("error", (error: Error) => console.error("[osc]", error.message));
     this.port.bind(0, "0.0.0.0");
   }
 
-  reconfigure(config: Project["osc"]): void { this.config = { ...config }; }
-  close(): void { if (this.port) { try { this.port.close(); } catch { /* already closed */ } } this.port = undefined; this.ready = false; }
+  reconfigure(config: Project["osc"]): void { this.config = { ...config };this.heartbeatPending.clear();this.lastHeartbeatReplyAt=undefined;this.heartbeatRttMs=undefined; }
+  close(): void { if (this.port) { try { this.port.close(); } catch { /* already closed */ } } this.port = undefined; this.ready = false;this.heartbeatPending.clear();this.lastHeartbeatReplyAt=undefined;this.heartbeatRttMs=undefined; }
+
+  heartbeat(): void {
+    if(!this.ready||!this.port)return;
+    const address=this.port.address();if(typeof address==="string")return;
+    const seq=this.heartbeatSeq=this.heartbeatSeq>=2_147_483_646?1:this.heartbeatSeq+1;
+    this.heartbeatPending.set(seq,process.hrtime.bigint());
+    for(const pending of this.heartbeatPending.keys())if(pending!==seq)this.heartbeatPending.delete(pending);
+    this.send(encodeMessage(this.message("system/ping",[{type:"i",value:seq},{type:"i",value:address.port}])));
+  }
+
+  health(): OscHealth {
+    const lastReplyAt=this.lastHeartbeatReplyAt,confirmed=lastReplyAt!==undefined&&Date.now()-lastReplyAt<6_000;
+    return {ready:this.ready,confirmed,...(this.heartbeatRttMs!==undefined?{rttMs:this.heartbeatRttMs}:{}),...(lastReplyAt!==undefined?{lastReplyAt}:{})};
+  }
 
   private address(path: string): string { return `${this.config.namespace.replace(/\/$/, "")}/${path}`; }
   private message(address: string, args: OscArg[]): OscMessage { return { address: this.address(address), args }; }

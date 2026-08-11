@@ -94,6 +94,7 @@ export type ClientMessage =
   | { type: "control.trigger"; id: string; gate: 0 | 1 }
   | { type: "control.toggle"; id: string }
   | { type: "control.value"; id: string; value: number }
+  | { type: "health.ping"; seq: number }
   | { type: "state.request" };
 
 export type ServerMessage =
@@ -104,6 +105,7 @@ export type ServerMessage =
   | { type: "control.updated"; id: string; pageId: string; requestId: string }
   | { type: "control.toggled"; id: string; gate: 0 | 1 }
   | { type: "generalPage.added"; page: GeneralPage }
+  | { type: "health.pong"; seq: number; osc: { ready: boolean; confirmed: boolean; rttMs?: number; lastReplyAt?: number } }
   | { type: "project.data"; project: Project }
   | { type: "error"; operation: string; message: string };
 
