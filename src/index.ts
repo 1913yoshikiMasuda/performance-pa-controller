@@ -233,8 +233,13 @@ function handle(message: ClientMessage, socket: WebSocket): void {
     case "control.update": {
       const control = project.controls.find((item) => item.id === message.id);
       if (!control) throw new Error("Unknown control");
-      if (message.patch.pageId !== undefined && message.patch.pageId !== control.pageId) {
-        const destination=project.generalPages.find((page)=>page.id===message.patch.pageId);
+      const {behavior,...patch}=message.patch;
+      if(behavior!==undefined){
+        if(control.type!=="pad")throw new Error("Only Pads and Switches can change behavior");
+        if(behavior!=="momentary"&&behavior!=="toggle")throw new Error("Unknown control behavior");
+      }
+      if (patch.pageId !== undefined && patch.pageId !== control.pageId) {
+        const destination=project.generalPages.find((page)=>page.id===patch.pageId);
         if(!destination)throw new Error("Unknown destination page");
         const destinationControls=project.controls.filter((item)=>item.pageId===destination.id&&item.id!==control.id);
         const candidate={x:control.x,y:control.y,w:control.w,h:control.h};
@@ -244,7 +249,15 @@ function handle(message: ClientMessage, socket: WebSocket): void {
         if(!placement)throw new Error("No free space for this control on the destination page");
         Object.assign(control,placement);
       }
-      Object.assign(control, message.patch);
+      if(behavior!==undefined&&control.type==="pad"){
+        const toggled=control.mode==="toggle",nextToggled=behavior==="toggle";
+        if(toggled!==nextToggled){
+          if(activePadGates.has(control.id)){osc.pad(control.id,0);activePadGates.delete(control.id);}
+          if(toggleStates.get(control.id)){osc.pad(control.id,0);toggleStates.delete(control.id);}
+          if(nextToggled)control.mode="toggle";else delete control.mode;
+        }
+      }
+      Object.assign(control, patch);
       project = parseProject(project);changed();
       if(message.requestId)send(socket,{type:"control.updated",id:control.id,pageId:control.pageId,requestId:String(message.requestId).slice(0,80)});
       break;

@@ -263,6 +263,7 @@ function syncFaderControls(id,value,sourceElement){
 
 function openControlMetadata(control){
   metadataControlId=control.id;$("control-metadata-id").textContent=`${control.type==="pad"&&control.mode==="toggle"?"SWITCH":control.type.toUpperCase()} · ${control.id}`;$("control-label").value=control.label||"";
+  $("control-behavior-label").hidden=control.type!=="pad";$("control-behavior").value=control.type==="pad"&&control.mode==="toggle"?"toggle":"momentary";
   $("control-page").replaceChildren(...project.generalPages.map((page)=>{const option=document.createElement("option");option.value=page.id;option.textContent=page.name;option.selected=page.id===control.pageId;return option;}));
   $("control-metadata-osc").textContent=oscPath(`${control.type}/${control.id}/${control.type==="pad"?"trigger":"value"}`);$("control-metadata").hidden=false;
   requestAnimationFrame(()=>{$("control-label").focus();$("control-label").select();});
@@ -270,11 +271,11 @@ function openControlMetadata(control){
 function closeControlMetadata(){$("control-metadata").hidden=true;metadataControlId=null;}
 function updateControlLabel(value){
   if(!metadataControlId)return;const id=metadataControlId,label=[...String(value??"").replace(/[\u0000-\u001f\u007f]/g," ").trim()].slice(0,40).join(""),control=project.controls.find((item)=>item.id===id),pageId=$("control-page").value;if(!control||!project.generalPages.some((page)=>page.id===pageId))return;
-  const previousPageId=control.pageId,labelChanged=label!==(control.label||""),moved=pageId!==previousPageId;
+  const previousPageId=control.pageId,labelChanged=label!==(control.label||""),moved=pageId!==previousPageId,behavior=control.type==="pad"?$("control-behavior").value:undefined,behaviorChanged=control.type==="pad"&&behavior!==(control.mode==="toggle"?"toggle":"momentary");
   if(pendingLabelUpdate)clearTimeout(pendingLabelUpdate.timer);const requestId=`label-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const notice=moved?(labelChanged?"Control updated and moved":"Control moved to another tab"):(label?"Display name updated":"Display name cleared");
+  const notice=behaviorChanged?(behavior==="toggle"?"Pad changed to Switch":"Switch changed to Pad"):moved?(labelChanged?"Control updated and moved":"Control moved to another tab"):(label?"Display name updated":"Display name cleared");
   const timer=setTimeout(()=>{if(pendingLabelUpdate?.requestId===requestId){pendingLabelUpdate=null;toast("Control not saved · restart Node");}},1800);pendingLabelUpdate={id,requestId,timer,notice,pageId,previousPageId};
-  send({type:"control.update",id,patch:{label,pageId},requestId});closeControlMetadata();
+  send({type:"control.update",id,patch:{label,pageId,...(behavior?{behavior}:{})},requestId});closeControlMetadata();
 }
 
 function pointerInsideElement(event,element){const rect=element.getBoundingClientRect();return event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;}

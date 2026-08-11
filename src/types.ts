@@ -89,7 +89,7 @@ export type ClientMessage =
   | { type: "scene.store"; slot: SceneSlot }
   | { type: "scene.clear"; slot: SceneSlot }
   | { type: "control.add"; controlType: "pad" | "switch" | "fader"; pageId: string }
-  | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "label" | "pageId" | "x" | "y" | "w" | "h">>; requestId?: string }
+  | { type: "control.update"; id: string; patch: Partial<Pick<FreeControl, "label" | "pageId" | "x" | "y" | "w" | "h">> & { behavior?: "momentary" | "toggle" }; requestId?: string }
   | { type: "control.remove"; id: string }
   | { type: "control.trigger"; id: string; gate: 0 | 1 }
   | { type: "control.toggle"; id: string }
