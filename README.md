@@ -230,7 +230,7 @@ Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を�
 - EDIT中にControl左上の`✎`を押すと、OSC IDを変更せずに表示名の設定・Clearと、別タブへの移動ができます。PadとSwitchは同じ画面の`Behavior`で相互に変更できます。移動先で同じ位置が空いていれば配置を維持し、重なる場合は空き位置へ自動配置します。日本語や絵文字も入力できます。
 - LIVEに戻すと配置操作を受け付けません。
 
-ヘッダーの`THEME`でStudio / Hype / Light / Ocean / Power / Liminal / Gorgeousを選択できます。テーマはそのブラウザに保存され、ProjectのOSC設定やレイアウトには影響しません。
+ヘッダーの`THEME`でStudio / Hype / Light / Ocean / Power / Liminal / Gorgeous / Neon / Amber / Sakura / Monoを選択できます。テーマはそのブラウザに保存され、ProjectのOSC設定やレイアウトには影響しません。
 
 ## Projectデータ
 

@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const performanceSurface=document.querySelector("main");
 for(const eventName of ["contextmenu","selectstart","dragstart"])performanceSurface.addEventListener(eventName,(event)=>event.preventDefault());
-const themeNames=["studio","hype","light","ocean","power","liminal","gorgeous"];
+const themeNames=["studio","hype","light","ocean","power","liminal","gorgeous","neon","amber","sakura","mono"];
 const storedTheme=localStorage.getItem("pps-theme");
 let theme=themeNames.includes(storedTheme)?storedTheme:"studio";
 let project = null;
@@ -127,7 +127,11 @@ function sourceColor(id){
     ocean:["#38d9ff","#5af2c7","#4c91ff","#77f0ff","#5dcda8","#8ba8ff"],
     power:["#ff542e","#ffd23f","#ff8b2d","#ef365d","#ffb13b","#e94d1d"],
     liminal:["#a8e0d0","#e5d7a5","#9ebbc0","#b8c99d","#d1b6aa","#8cb4aa"],
-    gorgeous:["#f4c86b","#e968a8","#bb79e6","#ff9c78","#d9a8ff","#f0d28a"]
+    gorgeous:["#f4c86b","#e968a8","#bb79e6","#ff9c78","#d9a8ff","#f0d28a"],
+    neon:["#2de2e6","#ff4fd8","#7a5cff","#4dffb8","#ff6b9d","#62b8ff"],
+    amber:["#ffb347","#ffd166","#e88d2a","#ffe29a","#d9791f","#ffc96b"],
+    sakura:["#c65b86","#277d83","#9b6ab3","#d77991","#438b72","#b86b58"],
+    mono:["#f5f5f5","#c9c9c9","#999999","#e1e1e1","#777777","#b4b4b4"]
   }[theme];
   let hash=0;for(const char of id)hash=(hash*31+char.charCodeAt(0))>>>0;return palettes[hash%palettes.length];
 }
