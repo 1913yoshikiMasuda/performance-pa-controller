@@ -216,7 +216,7 @@ Advanced DBAPの`Range metres`を設定すると、Sourceからその距離を�
 
 ### General Controls
 
-- ヘッダーの`GENERAL VIEW`を押すと、Spatial領域を複数のGeneralページを縦に並べた一覧へ切り替えられます。一覧内のPad、Switch、FaderはLIVE操作でき、`SPATIAL VIEW`で元のSpatial表示へ戻ります。表示モードはブラウザに保存されます。
+- ヘッダーの`GENERAL VIEW`を押すと、上段に複数のGeneralページを縦に並べ、下段にコンパクトなSpatialを配置した表示へ切り替えられます。一覧内のPad、Switch、Faderと下段のSpatialはどちらもLIVE操作でき、部屋表示は下段の領域に合わせて自動調整されます。`SPATIAL VIEW`で通常配置へ戻り、表示モードはブラウザに保存されます。
 - Padは枠内で指を離した時だけ、trigger gateの`1`→`0`を送って発火します。触れたまま枠外へ指を逃がして離すとキャンセルされ、OSCは送られません。
 - Switchも枠内で指を離した時だけ`1 / 0`を切り替え、ON/OFF表示を更新します。枠外で離した操作はキャンセルされます。OSCアドレスは通常Padと同じ形式です。
 - Faderは操作中の値を`0.0–1.0`で送ります。

@@ -77,12 +77,30 @@ header { height:62px; flex:none; display:flex; align-items:center; gap:14px; pad
 .quiet { background:transparent; }.theme-select { min-width:142px; min-height:38px; padding:0 9px; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--general); font-size:11px; font-weight:650; }.workspace-view { min-width:112px; padding:0 10px; color:var(--general); font-size:9px; font-weight:700; letter-spacing:.05em; }.workspace-view.on { border-color:var(--general); background:color-mix(in srgb,var(--general) 10%,var(--surface2)); }.mode { min-width:80px; border-color:var(--ok); color:var(--ok); font-weight:700; letter-spacing:.08em; }.mode.edit { border-color:var(--general); color:var(--general); }
 .mobile-theme-open,.mobile-theme-menu { display:none; }
 main { flex:1; min-height:0; padding:12px 16px 16px; display:grid; grid-template-rows:minmax(300px,2fr) minmax(180px,1fr); gap:12px; }
-.spatial-shell,.general-shell { border:1px solid var(--line); border-radius:15px; background:var(--surface); overflow:hidden; }
+.spatial-shell,.general-shell,.general-overview-shell { border:1px solid var(--line); border-radius:15px; background:var(--surface); overflow:hidden; }
 .spatial-shell { min-height:0; display:grid; grid-template-columns:130px minmax(0,1fr) 74px; border-top:2px solid var(--spatial); }
-.general-overview { display:none; }
-main[data-workspace="general"] .spatial-shell { display:block; border-top-color:var(--general); }
-main[data-workspace="general"] .spatial-shell> :not(.general-overview) { display:none; }
-main[data-workspace="general"] .general-overview { height:100%; display:flex; flex-direction:column; gap:8px; padding:8px; overflow:auto; scrollbar-color:var(--general) transparent; }
+.general-overview-shell { display:none; min-height:0; border-top:2px solid var(--general); }
+main[data-workspace="general"] { grid-template-rows:minmax(300px,2fr) minmax(170px,.9fr); }
+main[data-workspace="general"] .general-overview-shell { display:flex; flex-direction:column; gap:8px; padding:8px; overflow:auto; scrollbar-color:var(--general) transparent; }
+main[data-workspace="general"] .general-shell { display:none; }
+main[data-workspace="general"] .spatial-shell { grid-row:2; grid-template-columns:110px minmax(0,1fr) 58px; }
+main[data-workspace="general"] .source-rail { padding:6px; }
+main[data-workspace="general"] #sources { gap:4px; margin-top:5px; }
+main[data-workspace="general"] .source { height:40px; padding:4px 7px; }
+main[data-workspace="general"] .source b { margin-top:2px; font-size:11px; }
+main[data-workspace="general"] .height-control { gap:3px; padding:5px 4px; }
+main[data-workspace="general"] .height-control input { min-height:52px; width:30px; }
+main[data-workspace="general"] .height-control output { font-size:8px; }
+main[data-workspace="general"] .spatial-retrigger { width:44px; min-height:38px; }
+main[data-workspace="general"] .spatial-retrigger span { font-size:14px; }
+main[data-workspace="general"] .spatial-retrigger small { font-size:5px; }
+main[data-workspace="general"] .view-toolbar { top:5px; left:5px; gap:3px; }
+main[data-workspace="general"] .view-toolbar>div { padding:1px; }
+main[data-workspace="general"] .view-toolbar button { min-width:31px; min-height:23px; padding:2px 4px; font-size:7px; }
+main[data-workspace="general"] .scene-morph { top:5px; right:5px; width:210px; padding:2px; }
+main[data-workspace="general"] .scene-morph button { min-width:35px; min-height:23px; font-size:7px; }
+main[data-workspace="general"] .axis-hint { display:none; }
+main[data-workspace="general"] .spatial-osc-readout { left:5px; bottom:3px; max-width:calc(100% - 10px); }
 .overview-page { flex:none; height:clamp(180px,25vh,235px); display:grid; grid-template-columns:92px minmax(0,1fr); overflow:visible; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
 .overview-tab { height:100%; min-width:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px; border:0; border-right:1px solid var(--line); border-radius:9px 0 0 9px; background:var(--surface2); color:var(--general); }.overview-tab b { max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:10px; letter-spacing:.08em; writing-mode:vertical-rl; }.overview-tab small { margin-top:8px; color:var(--muted); font:7px ui-monospace,SFMono-Regular,Menlo,monospace; }
 .overview-board { position:relative; min-width:0; min-height:0; background-image:linear-gradient(var(--board-grid) 1px,transparent 1px),linear-gradient(90deg,var(--board-grid) 1px,transparent 1px); background-size:5% 25%; touch-action:none; }

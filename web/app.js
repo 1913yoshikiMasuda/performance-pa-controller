@@ -42,7 +42,7 @@ let workspaceView=localStorage.getItem("pps-workspace-view")==="general"?"genera
 function applyWorkspaceView(redraw=true){
   const overview=workspaceView==="general"&&!usesMobileAutoLayout();performanceSurface.dataset.workspace=overview?"general":"spatial";
   $("workspace-view").textContent=overview?"SPATIAL VIEW":"GENERAL VIEW";$("workspace-view").classList.toggle("on",overview);$("workspace-view").title=overview?"Return to Spatial":"Show all General Control pages";
-  if(redraw&&project){renderGeneralOverview();requestAnimationFrame(()=>overview?renderGeneralOverview():drawStage());}
+  if(redraw&&project){renderGeneralOverview();requestAnimationFrame(drawStage);}
 }
 
 function setMobilePanel(panel,redraw=true){
@@ -142,7 +142,7 @@ function render() {
   document.body.classList.toggle("editing", editMode);
   $("mode").textContent = editMode ? "EDIT" : "LIVE"; $("mode").classList.toggle("edit", editMode);
   $("project-name").textContent = project.name;
-  updateOscReadouts();renderSources();renderSceneControls();renderGeneralPages();renderControls();renderSettings();applyWorkspaceView(false);requestAnimationFrame(() => { if(performanceSurface.dataset.workspace!=="general")drawStage();drawLayout();syncViewControls(); });
+  updateOscReadouts();renderSources();renderSceneControls();renderGeneralPages();renderControls();renderSettings();applyWorkspaceView(false);requestAnimationFrame(() => { drawStage();drawLayout();syncViewControls(); });
 }
 
 function renderSources() {
@@ -347,16 +347,17 @@ function projection(canvas) {
   const rect=canvas.getBoundingClientRect(),dpr=Math.max(1,Math.min(3,Number(devicePixelRatio)||1));
   const pixelWidth=Math.max(1,Math.round(Math.max(1,rect.width)*dpr)),pixelHeight=Math.max(1,Math.round(Math.max(1,rect.height)*dpr));
   if(canvas.width!==pixelWidth||canvas.height!==pixelHeight){canvas.width=pixelWidth;canvas.height=pixelHeight;}
-  const width=pixelWidth,height=pixelHeight,pad=Math.min(width,height)*0.1;
+  const width=pixelWidth,height=pixelHeight,pad=Math.min(width,height)*0.1,compact=performanceSurface.dataset.workspace==="general";
   if (camera.mode === "2d") {
     const roomAspect=project.room.width_m/project.room.depth_m,availableWidth=width-pad*2,availableHeight=height-pad*2;
+    if(compact)return {mode:"2d",dpr,width,height,x0:pad,y0:pad,rw:availableWidth,rh:availableHeight};
     let rw=availableWidth,rh=rw/roomAspect;if(rh>availableHeight){rh=availableHeight;rw=rh*roomAspect;}
     return { mode:"2d",dpr,width,height,x0:(width-rw)/2,y0:(height-rh)/2,rw,rh };
   }
   const corners=[];for(const x of [0,1])for(const y of [0,1])for(const z of [0,1])corners.push(raw3d([x,y,z]));
   const xs=corners.map((point)=>point[0]),ys=corners.map((point)=>point[1]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
-  const scale=Math.min((width-pad*2)/Math.max(.001,maxX-minX),(height-pad*2)/Math.max(.001,maxY-minY))*camera.zoom;
-  return { mode:"3d",dpr,width,height,scale,ox:width/2-(minX+maxX)/2*scale,oy:height/2-(minY+maxY)/2*scale };
+  const fitX=(width-pad*2)/Math.max(.001,maxX-minX),fitY=(height-pad*2)/Math.max(.001,maxY-minY),scaleX=(compact?fitX:Math.min(fitX,fitY))*camera.zoom,scaleY=(compact?fitY:Math.min(fitX,fitY))*camera.zoom;
+  return { mode:"3d",dpr,width,height,scaleX,scaleY,ox:width/2-(minX+maxX)/2*scaleX,oy:height/2-(minY+maxY)/2*scaleY };
 }
 function raw3d(p) {
   const x=(p[0]-0.5)*project.room.width_m,y=(p[1]-0.5)*project.room.depth_m,z=(p[2]||0)*project.room.height_m;
@@ -365,11 +366,11 @@ function raw3d(p) {
 }
 function projectPoint(p, view) {
   if(view.mode==="2d") return [view.x0+p[0]*view.rw,view.y0+p[1]*view.rh];
-  const [x,y]=raw3d(p);return [view.ox+x*view.scale,view.oy+y*view.scale];
+  const [x,y]=raw3d(p);return [view.ox+x*view.scaleX,view.oy+y*view.scaleY];
 }
 function unprojectPoint(x, y, z, view) {
   if(view.mode==="2d") return [clamp01((x-view.x0)/Math.max(.001,view.rw)),clamp01((y-view.y0)/Math.max(.001,view.rh)),z];
-  const scale=Math.max(.001,view.scale),sinEl=Math.max(.001,Math.sin(camera.el)),rx=(x-view.ox)/scale,ry=(y-view.oy)/scale;
+  const scaleX=Math.max(.001,view.scaleX),scaleY=Math.max(.001,view.scaleY),sinEl=Math.max(.001,Math.sin(camera.el)),rx=(x-view.ox)/scaleX,ry=(y-view.oy)/scaleY;
   const depth=-(ry+z*project.room.height_m*Math.cos(camera.el))/sinEl;
   const px=rx*Math.cos(camera.az)+depth*Math.sin(camera.az),py=rx*Math.sin(camera.az)-depth*Math.cos(camera.az);
   return [clamp01(px/project.room.width_m+0.5),clamp01(py/project.room.depth_m+0.5),z];
@@ -580,5 +581,5 @@ $("project-export").addEventListener("click",()=>send({type:"project.export"}));
 $("project-import").addEventListener("click",()=>$("project-file").click());
 $("project-file").addEventListener("change",async()=>{try{const data=JSON.parse(await $("project-file").files[0].text());send({type:"project.import",project:data});toast("Project imported");}catch{toast("Invalid project file");}$("project-file").value="";});
 function downloadProject(data){const blob=new Blob([JSON.stringify(data,null,2)+"\n"],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${data.name.replace(/[^A-Za-z0-9_-]+/g,"-")||"project"}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-addEventListener("resize",()=>{applyWorkspaceView(false);if(performanceSurface.dataset.workspace!=="general")drawStage();drawLayout();if(project)renderControls();});
+addEventListener("resize",()=>{applyWorkspaceView(false);drawStage();drawLayout();if(project)renderControls();});
 connect();
